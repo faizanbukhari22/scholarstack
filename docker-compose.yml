@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  eduagent:
+    build: .
+    container_name: eduagent_os_runtime
+    volumes:
+      # Map your local folder onto the container workspace layer for data persistence
+      - ./workspace:/app/workspace
+    environment:
+      # Pull your private credentials securely from your local shell environment
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ANTIGRAVITY_ENVIRONMENT=local
+    stdin_open: true
+    tty: true
