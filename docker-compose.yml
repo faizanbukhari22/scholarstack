@@ -1,15 +1,17 @@
-version: '3.8'
-
 services:
   eduagent:
     build: .
     container_name: eduagent_os_runtime
+    # Override the image's default entrypoint (the Gradio web demo used by
+    # Hugging Face Spaces) to run the one-shot batch pipeline locally instead.
+    command: python src/main.py
     volumes:
       # Map your local folder onto the container workspace layer for data persistence
       - ./workspace:/app/workspace
+    env_file:
+      - .env
     environment:
-      # Pull your private credentials securely from your local shell environment
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - ANTIGRAVITY_ENVIRONMENT=local
+      # Override this to process any YouTube URL or local file path
+      - LECTURE_TARGET=${LECTURE_TARGET:-https://www.youtube.com/watch?v=X6eGCO_5KOA}
     stdin_open: true
     tty: true

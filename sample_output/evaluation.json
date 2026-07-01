@@ -1,0 +1,31 @@
+{
+  "factual_consistency_score": 0.95,
+  "summary_quality_score": 0.98,
+  "hallucination_detected": true,
+  "missing_critical_terms": [
+    "ChatGPT prompts",
+    "Hugging Face",
+    "ADK"
+  ],
+  "key_concepts_covered": [
+    "Capstone Project purpose and scope",
+    "AASN tools, skills, security, deployment",
+    "Badge and certificate eligibility (participation vs. code labs)",
+    "Badge and certificate award date (July 2026)",
+    "Four project tracks (Good, Business, Concise, Freestyle)",
+    "Team formation rules (individual or up to 4)",
+    "Submission deadline (July 6, 2026)",
+    "Winner announcement date (end of July 2026)",
+    "Number of winners (3 per track, 12 total)",
+    "Winner recognition (swags, social media)",
+    "Submission requirements (media gallery, project link, write-up)",
+    "Kaggle write-up details (word count, cover image, documentation)",
+    "Video requirements (5 mins, YouTube, mandatory)",
+    "Public code requirement (GitHub)",
+    "Evaluation criteria (AASN, multi-agent, MCP, security, deployability, agent skills)",
+    "Minimum demonstration of 3 evaluation concepts",
+    "Evaluation scoring breakdown (30 marks for core concept, 70 for code/docs)",
+    "Code security (no keys in GitHub)",
+    "Step-by-step submission process"
+  ]
+}

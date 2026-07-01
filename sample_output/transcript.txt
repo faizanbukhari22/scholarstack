@@ -1,0 +1,126 @@
+[0.0s - 6.3s]: Over the last five days, we have learned a lot, AASN tools, skills, security, deployment and
+[6.3s - 11.0s]: production ready development. Now it's a time to put that knowledge into practice through the
+[11.0s - 16.6s]: capstone project. This is your opportunity to build over one AASN showcase what you have learned
+[16.6s - 22.2s]: and a badge and certificate even compete for recognition from Kagaland Google. In this video,
+[22.2s - 26.6s]: we'll go through the complete capstone project process, submission requirements, deadlines,
+[26.6s - 32.1s]: important dates and everything you need to know before submitting your project. Let's get started.
+[37.2s - 43.8s]: Guys, let's start. You might receive two maids. One is related to wrap up, wrap up next steps.
+[43.8s - 47.8s]: There are a couple of frequently asked questions and related to capstone project.
+[48.9s - 54.3s]: Kagaland badge certificate. Once you log into Kagaland account, you will see two new updates. One is
+[54.5s - 59.3s]: wrap up and other one is capstone project. First, we'll open and see the next steps.
+[59.3s - 65.0s]: There are frequent last questions about it. Let's open this related to your quota tokens due
+[65.0s - 71.0s]: to capacity limitations. You may find that it may take longer than five days to complete all
+[71.0s - 76.2s]: our code labs. That means that whatever the five days, assignments are there, right? Even though
+[76.2s - 81.0s]: you could not able to complete this, still you have time to complete it. That is first thing.
+[81.0s - 85.7s]: Second point is, the badge and certificate for this course will be awarded based on the
+[85.7s - 92.3s]: partition in the capstone project. That means that you have to participate in the project completion.
+[92.3s - 98.7s]: Then only you'll get the badge and certificate. Completion of all code labs are not prerequisite
+[98.7s - 106.1s]: to receive a badge and certification. You can completely do your own pace. But if you complete
+[106.1s - 110.0s]: these assignments, you will understand the concept so that it will be very easy when you're doing
+[110.2s - 114.7s]: the project. Again, I am repeating Kaggle Badgen certificate participants in the capstone
+[114.7s - 120.0s]: project are eligible to earn badge and certificate on the Kaggle profile. This time, you're going to
+[120.0s - 127.2s]: get the badge and Kaggle profile. These will be added to all eligible profiles by end of July 2026,
+[127.2s - 134.7s]: not today, not tomorrow, July 2026, and how it looks the badge or certificate click on profile,
+[134.7s - 139.9s]: not now guys. Again, after completion, whatever I'm showing it here, this is my previous
+[140.6s - 145.1s]: one. You will see similar kind of badge. Once you complete your project, after July end,
+[145.1s - 151.4s]: you're going to get it. This is how it looks. This is old one 2025. Just click on badge. You will see
+[151.4s - 157.0s]: these kind of certificate on your profile. Just closing it. We'll go back. So this is overall
+[157.0s - 161.8s]: wrap up. What you'll end everything they explained it. We'll go back. This is the next one.
+[161.8s - 167.4s]: Capstone project, five days A isn't intensive web coding with Google. Just clicking on here,
+[167.4s - 171.9s]: again, they mentioned the same thing here as well. All participants will receive a Kaggle
+[171.9s - 178.6s]: badge and certificate by end of July 2026. This is how it looks. Basically, there are four tracks
+[178.6s - 185.5s]: will be there. Agents for good, Agents for business, concise Agents and freestyle track. Agents for
+[185.5s - 190.7s]: goods are, for example, learning assistant for under resource students, Agents for visibility
+[190.7s - 196.4s]: impaired users. So, basically, something you're doing good for the society. Agents for business,
+[197.0s - 204.2s]: customer support, HR recruiting assistant, workflow automation agents. Those will come under
+[204.2s - 212.3s]: business. Consize agent, kind of any personal tracking apps, health and habits or email and
+[212.3s - 218.6s]: WhatsApp assistance, travel concise agents, open track. Out of these three, suppose you feel that
+[218.6s - 224.7s]: your agent not part of all these three, then you have to select the custom track and here,
+[224.7s - 230.2s]: for example, digital partnering assistant, code review assistant. You have to select any one of the
+[230.2s - 237.0s]: track and I want to mention similarly exactly same tracks already provided in the last time as well.
+[237.0s - 242.9s]: If you are more interested, how we participated at that time, how I created at that time project,
+[242.9s - 247.9s]: everything is available. All solutions are already available here. But on subs are little different.
+[247.9s - 252.8s]: There are many charge-gifted prompts which I provided in these videos. You can use those prompts
+[252.8s - 258.2s]: and easily you can create it. Okay, anyway, I have one more video plan where I am going to
+[258.2s - 263.4s]: expand detailly how we are going to create your own project, but that required one or two days
+[263.4s - 268.4s]: time for me so that I can create it better. If you're still interested and if you want to see,
+[268.4s - 273.5s]: we just see it. I'm going to share this playlist in our description. Go ahead and see it. You can
+[273.6s - 279.3s]: participate as a single or you can form a team with four members and you can participate. I would
+[279.3s - 285.8s]: suggest as individual so that you learn many things. Okay, each person or team may submit only one
+[285.8s - 291.1s]: project, but you all four will get the badges and certificates. The final submission deadline is
+[291.1s - 297.8s]: July 6th, 2026, Lamb 59 PT, Pacific Time Zone. Okay, winner will be announced by end of the July
+[297.8s - 306.1s]: 2026. Data and July 6 winners will be announced on July 2026 and three teams in each track. So
+[306.1s - 312.5s]: here we have four tracks are there, right? Each track they are going to find the three winners.
+[312.5s - 318.3s]: So that means that 12 awards will be there. Each track three awards will be there. So we have
+[318.3s - 323.8s]: four tracks four into three total 12 winners will be there. Top three teams in all these four
+[323.8s - 329.5s]: tracks going to get the Kaggle Spags and you're going to get the recognition in the social media
+[329.5s - 335.8s]: platforms. Now, you just click on this. This is the main page of the capture project. Here,
+[335.8s - 340.6s]: you can notice that join hackathon. I'll show you that how to do that. We already spoke about it,
+[340.6s - 345.7s]: the guidelines, everything. What is the submission requirements? Four tracks are there as we
+[345.7s - 351.5s]: already discussed in your submission media gallery. That means that one image, one video,
+[352.3s - 357.4s]: attached a project link. Okay, that project link can be your GitHub link. You know need to
+[357.4s - 363.4s]: deploy your project in any of the cloud based, but if you want to deploy, you can deploy. There are
+[363.4s - 368.2s]: multiple free options are there where you can deploy. In my previous videos, I already deployed
+[368.2s - 373.4s]: like you can use the hugging face. That is not a mandatory again, not required any billing accounts.
+[373.4s - 378.4s]: Your final submission must be made prior to the deadline. Okay, Kaggle right up,
+[378.4s - 383.3s]: it should not exit 2,500 words. A cover image required forever, right up,
+[383.3s - 389.8s]: attach your video to the media gallery. Video should be five minutes or less, should be published
+[389.8s - 395.2s]: to the YouTube. You can just record one video. What is your project, everything? Just publish
+[395.2s - 401.4s]: into the YouTube and just give that link. If live demo is not possible, a link to your public code
+[401.4s - 407.8s]: GitHub is required. I already told you right. Four tracks, East track, three hours, Asian for
+[407.8s - 413.8s]: business, three hours, three hours, freestyle, three hours. How the evaluation will be there?
+[413.8s - 419.8s]: Whatever you learned as part of this journey, Asian multi-Agent, for that you have to show the
+[419.8s - 425.0s]: code, MCP, you have to show the code, anti-gravity. For example, anti-gravity app is there,
+[425.0s - 429.6s]: how you are going to use it that you can show it, security features, deployability,
+[430.3s - 437.3s]: Asian skills. One, two, three, four, five, six, six sections are there. You have to show either of
+[437.3s - 443.3s]: three. That's what they mentioned, at least three. So in your case, suppose if you cannot show
+[443.3s - 449.0s]: this anti-gravity sections or anything, you just create your project based on these concepts. ADK
+[449.0s - 456.6s]: use it, MCP server, you can use it, security features, you can use it, Asian skills, you can use it.
+[456.6s - 462.2s]: If you are not ready to show anything through video, you just construct these four and create
+[462.2s - 466.8s]: your project based on these four sections. There are two categories. Again, we'll be there.
+[466.8s - 473.9s]: Each category has some marks. First category, you have 30 marks. Second category, you have 70 marks.
+[473.9s - 479.0s]: Core concept and value, you have to write what is your problem statement and what you are doing
+[479.0s - 484.6s]: it. What is the value of this project? You have to create one YouTube video, which should be
+[485.3s - 491.6s]: less than five minutes. You have to explain what is your architecture, how to demonstrate it.
+[491.6s - 496.4s]: That is the YouTube video. You have to write complete documentation for your project.
+[496.4s - 501.5s]: What's your architecture of your project? Those kinds of concepts you have to explain in the
+[501.5s - 507.3s]: write-up. All these things, easily you can do it using the charge deputy category two.
+[508.2s - 514.0s]: Here you have 70 marks, 50 marks related to your code. Make sure that when you're pushing your code
+[514.0s - 519.8s]: to the GitHub, keys are not pushed to the your code. Documentation write-up, you have to create it.
+[519.8s - 524.7s]: How to use your project like readme, problem solution architecture, everything. You have to submit
+[524.7s - 530.2s]: before July 6th. You have ample amount of time. Don't be rushed. Understand the concepts.
+[530.2s - 536.1s]: If time permits, complete those assignments. Meanwhile, I also create detailed video, how to submit
+[536.1s - 541.2s]: it next to two three days. Then you can watch that video easily. You can complete this project.
+[541.2s - 545.3s]: Now, I'll show you how to submit it. Click on join hackathon.
+[549.0s - 555.3s]: I understand and accept. Once you do it, you can see these view write-ups. All submits are
+[555.3s - 560.6s]: due by something like this. You can see it. I'm ready with my submission just to demonstrate.
+[560.6s - 567.4s]: If you remember, in the day four and day five, I deployed this project ambient expansion.
+[567.6s - 573.1s]: What I've done, I just pushed this code to the GitHub. I asked the integrity to create the
+[573.1s - 579.0s]: descriptions, create the images. It created for me. It created the write-up as well. I did not write
+[579.0s - 585.6s]: anything. I'm going back to the submission view write-ups. New write-up. Give the title of your
+[585.6s - 593.4s]: project. Give you a write-up title. Okay, title is there. Subtitle also added. Edit image right here.
+[594.2s - 603.0s]: I'm going to select the image which anti-gravity created for us. Okay, say, looks good, right?
+[604.2s - 610.2s]: Select track. It is a instance track, right? Obviously, it is not the agents for good,
+[611.1s - 618.6s]: not the concise agent. It's a agents for business. Media is already, I can add videos or photos. Let
+[618.7s - 625.4s]: me add the image. What is image which I'm going to select? This is the image created by anti-gravity
+[625.4s - 630.8s]: again. You can notice that it just showing the flow how it works. Guys, if you really miss
+[630.8s - 636.0s]: the yesterday's video to deploy the code in the actual cloud, you just watch one time. You will
+[636.0s - 640.9s]: understand the process. Just drag and drop. This is a workflow diagram. If you have the video
+[641.4s - 649.0s]: you just include it. Click on save. Product description. Go to anti-gravity. Copy.
+[649.6s - 655.8s]: Created the document. So it is one thousand four words. That's fine. Attachments here. Click on
+[655.8s - 665.1s]: add link. Enter the URL. This is our application in the GitHub. Enter the GitHub URL.
+[665.8s - 672.7s]: Title done. Click on insert. I have added the required things. Now video is not available.
+[673.5s - 679.6s]: Let me add video link also. The kit is not along me to submit this. This is the checklist.
+[679.6s - 687.8s]: So video is mandatory guys. Just adding again video link. How do we do video? Day file. Click on save.
+[688.5s - 696.0s]: Now you can see right. Ready to submit. You can see the video also. Similarly, you just create
+[696.0s - 704.9s]: your own video. You can click on preview. Verify how it looks before you submit. It looks good.
+[704.9s - 711.5s]: I feel prognostatement we have. What are the things? Architecture we have. Use cases,
+[711.5s - 718.2s]: verification, project link. Everything is there. Just time going to click on submit. Submitted
+[718.2s - 734.1s]: guys. Small textments submitted. Good. I completed my project. But however, I am going to create new
+[734.1s - 739.6s]: project. I just submitted just to demonstrate how you can do it. That's it guys. That's
+[739.6s - 744.4s]: all about caption project. This is your chance to apply. Everything you have learned during
+[744.4s - 749.7s]: the last five days and build something useful with AASN. Complete your project before the submission
+[749.7s - 755.0s]: deadline and add your badge certificate on your Kaggle profile. If you found this video helpful,
+[755.0s - 760.7s]: smash that like button, share our channel with your one friend. It helps them learn something new
+[760.7s - 764.6s]: and it helps channel grow too. Thanks for watching and all the best for your
+[764.6s - 766.6s]: caption project.

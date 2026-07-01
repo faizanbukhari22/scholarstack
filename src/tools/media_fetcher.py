@@ -1,35 +1,51 @@
 import os
-from pathlib import Path
-import yt_dlp
+import re
+from yt_dlp import YoutubeDL
+from src.config import WORKSPACE_DIR
 
-def process_input_source(source_path: str, workspace_dir: str = "/app/workspace") -> str:
-    local_path = Path(source_path)
-    if local_path.is_file() or os.path.exists(Path(workspace_dir) / source_path):
-        resolved_path = local_path if local_path.is_absolute() else Path(workspace_dir) / source_path
-        print(f"[Fetcher] Target found locally: {resolved_path.name}")
-        return str(resolved_path.resolve())
+def extract_video_id(url: str) -> str:
+    """Extracts the unique video ID from a standard YouTube URL string."""
+    pattern = r'(?:v=|\/)([0-9A-Za-z_-]{11}).*'
+    match = re.search(pattern, url)
+    return match.group(1) if match else "extracted_audio"
 
-    print(f"[Fetcher] Ingesting remote URL stream: {source_path}")
-    out_path = Path(workspace_dir)
+def process_input_source(input_source: str) -> str:
+    """Ingests a source path. Checks for a cached file match before spinning up network fetches."""
+    workspace_dir = WORKSPACE_DIR
     
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '128',
-        }],
-        'outtmpl': str(out_path / '%(id)s.%(ext)s'),
-        'quiet': True,
-        'no_warnings': True,
-    }
+    # Handle direct local file paths passed to the container
+    if os.path.exists(input_source):
+        print(f"[Fetcher] Local file path recognized: {input_source}")
+        return input_source
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(source_path, download=True)
-            target_file = out_path / f"{info['id']}.mp3"
-            print(f"[Fetcher] Stream downloaded successfully: {target_file.name}")
-            return str(target_file.resolve())
-    except Exception as e:
-        print(f"[Fetcher Error] Failed to extract from URL source: {e}")
-        raise e
+    # Handle YouTube URL strings
+    if input_source.startswith("http"):
+        video_id = extract_video_id(input_source)
+        cached_file_path = os.path.join(workspace_dir, f"{video_id}.mp3")
+        
+        # Performance Cache Check
+        if os.path.exists(cached_file_path):
+            print(f"[Fetcher] Cache hit -- skipping download: {video_id}.mp3")
+            return cached_file_path
+            
+        print(f"[Fetcher] Cache miss. Ingesting remote URL stream: {input_source}")
+        
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(workspace_dir, f"{video_id}.%(ext)s"),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': True,
+            'no_warnings': True,
+        }
+        
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([input_source])
+            
+        print(f"[Fetcher] Stream downloaded successfully: {video_id}.mp3")
+        return cached_file_path
+
+    raise FileNotFoundError(f"Input source target '{input_source}' could not be resolved.")
