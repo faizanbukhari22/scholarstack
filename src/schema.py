@@ -13,6 +13,14 @@ class LectureEvaluation(BaseModel):
         ...,
         description="True if any claim in the notes or flashcards cannot be grounded in the source transcript."
     )
+    hallucinated_claims: list[str] = Field(
+        ...,
+        description=(
+            "Specific claims found in the notes or flashcards that cannot be grounded "
+            "in the source transcript. Empty when hallucination_detected is false. "
+            "Omissions belong in missing_critical_terms, not here."
+        )
+    )
     missing_critical_terms: list[str] = Field(
         ...,
         description="List of important concepts present in the transcript that were omitted from the generated outputs."

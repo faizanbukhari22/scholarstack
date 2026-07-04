@@ -46,12 +46,14 @@ jobs:
             "factual_consistency_score": 0.95,
             "summary_quality_score": 0.98,
             "hallucination_detected": True,
+            "hallucinated_claims": ["ungrounded_claim_a"],
             "missing_critical_terms": ["term_a", "term_b"],
             "key_concepts_covered": ["concept_a", "concept_b"]
         }
         result = LectureEvaluation(**sample)
         assert result.factual_consistency_score == 0.95
         assert result.hallucination_detected is True
+        assert len(result.hallucinated_claims) == 1
         assert len(result.key_concepts_covered) == 2
         print("[CI] LectureEvaluation schema validation passed.")
 

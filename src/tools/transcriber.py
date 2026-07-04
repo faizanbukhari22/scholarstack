@@ -31,8 +31,11 @@ def transcribe_audio_file(audio_path: str) -> str:
                 f"Failed to initialize Whisper model from both baked cache and Hugging Face Hub: {e}"
             ) from e
     
-    print(f"[Transcriber] Processing audio timeline for: {os.path.basename(audio_path)}")
-    segments, info = model.transcribe(audio_path, beam_size=5)
+    # beam_size=1 (greedy) keeps memory flat; higher values keep N hypotheses
+    # in memory and can OOM-kill the container (exit 137) on long lectures.
+    beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "1"))
+    print(f"[Transcriber] Processing audio timeline for: {os.path.basename(audio_path)} (beam_size={beam_size})")
+    segments, info = model.transcribe(audio_path, beam_size=beam_size)
     
     transcript_segments = []
     for segment in segments:

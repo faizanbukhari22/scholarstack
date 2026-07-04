@@ -43,7 +43,7 @@ The core multi-agent loop. Two specialized Gemini agents are dispatched concurre
 
 Both agents run against `gemini-2.5-flash` via the official `google-genai` SDK. Their outputs are written to `workspace/notes.md` and `workspace/flashcards.md`.
 
-### Layer 4 - Structured Verification (`src/schema.py`)
+### Layer 4 - Structured Verification with Correction Loop (`src/schema.py`)
 After generation, a verification agent audits both outputs against the original transcript. It is forced to respond in structured JSON conforming to the `LectureEvaluation` Pydantic model, which captures:
 
 | Field | Type | Description |
@@ -51,10 +51,11 @@ After generation, a verification agent audits both outputs against the original 
 | `factual_consistency_score` | float (0-1) | How accurately the notes reflect the source transcript |
 | `summary_quality_score` | float (0-1) | Clarity, structure, and completeness of the study notes |
 | `hallucination_detected` | bool | Whether any claim cannot be grounded in the transcript |
+| `hallucinated_claims` | list[str] | The specific ungrounded claims found in the outputs |
 | `missing_critical_terms` | list[str] | Important concepts omitted from the outputs |
 | `key_concepts_covered` | list[str] | Important concepts successfully captured |
 
-The result is printed to stdout and saved to `workspace/evaluation.json`.
+The audit is a real quality gate, not a passive report: if `hallucination_detected` is true or `factual_consistency_score` falls below a configurable threshold (`EDUAGENT_MIN_CONSISTENCY`, default 0.85), the audit findings are fed back to both synthesis agents for a revision pass and the revised outputs are re-audited before delivery. The judge model is independently configurable via `EDUAGENT_JUDGE_MODEL` (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final result is printed to stdout and saved to `workspace/evaluation.json`.
 
 ### Layer 5 - MCP Server (`src/mcp_server.py`)
 The entire pipeline is also exposed as an MCP (Model Context Protocol) server named `eduagent_mcp`, so any MCP-compatible client (Claude Desktop, Claude Code, or another agent) can call EduAgent-OS as a tool rather than running it as a standalone script. See [MCP Server](#mcp-server) below.
@@ -67,10 +68,10 @@ The entire pipeline is also exposed as an MCP (Model Context Protocol) server na
 |---|---|
 | **Multi-Agent Architecture** | Two specialized sub-agents (Academic Synthesis Specialist and Educational Taxonomist) run in parallel via `asyncio.gather` with `asyncio.to_thread` |
 | **Structured Output Schema** | `LectureEvaluation` Pydantic model enforces typed JSON from Gemini via `response_schema` and `response_mime_type="application/json"` |
-| **Security Features** | API key injected at runtime via Docker Compose environment variables; `.env` and `workspace/` excluded from version control via `.gitignore` |
+| **Security Features** | API key injected at runtime via Docker Compose environment variables; `.env` and `workspace/` gitignored; remote ingestion restricted to a YouTube host whitelist (SSRF prevention); local file access sandboxed to the workspace directory; untrusted transcript content delimited against prompt injection; container runs as a non-root user; per-request workspaces isolate concurrent web demo users |
 | **Deployability & CI** | Fully containerized via Docker + Docker Compose; GitHub Actions CI gate runs flake8 static analysis on every push to `main` |
 | **Tool Execution** | `yt-dlp` for media ingestion, `faster-whisper` for local ML transcription - both execute as tool calls inside the container boundary |
-| **MCP Server** | `src/mcp_server.py` exposes the full pipeline as MCP tools (`process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`) via the official Python MCP SDK (FastMCP), callable from Claude Desktop, Claude Code, or any MCP client |
+| **MCP Server** | `src/mcp_server.py` exposes the full pipeline as MCP tools (`process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`) via the official Python MCP SDK (FastMCP), callable from Claude Desktop, Claude Code, or any MCP client |
 | **Live Deployment** | `app.py` Gradio frontend runs as the Docker image's default entrypoint, deployable directly to Hugging Face Spaces for a public, interactive demo |
 
 ---
@@ -131,12 +132,14 @@ eduagent-os/
 │   ├── config.py            # Shared WORKSPACE_DIR resolution (container + local)
 │   ├── schema.py            # Pydantic LectureEvaluation structured output schema
 │   └── tools/
-│       ├── media_fetcher.py # URL/local file ingestion via yt-dlp
-│       └── transcriber.py  # Local ML transcription via faster-whisper
+│       ├── media_fetcher.py # URL/local file ingestion via yt-dlp (host whitelist + path sandbox)
+│       ├── transcriber.py   # Local ML transcription via faster-whisper
+│       └── pdf_generator.py # Markdown-to-PDF study guide compiler (fpdf2)
 ├── sample_output/           # Sample pipeline outputs from a real run
 │   ├── transcript.txt
 │   ├── notes.md
-│   └── flashcards.md
+│   ├── flashcards.md
+│   └── evaluation.json
 ├── .github/
 │   └── workflows/
 │       └── ci.yml           # GitHub Actions CI gate (flake8 static analysis)
@@ -150,7 +153,7 @@ eduagent-os/
 
 ## MCP Server
 
-EduAgent-OS ships with an MCP (Model Context Protocol) server, `src/mcp_server.py`, built with the official Python MCP SDK (FastMCP). It exposes the pipeline as five callable tools instead of a single-shot script, so any MCP-compatible client can drive it directly.
+EduAgent-OS ships with an MCP (Model Context Protocol) server, `src/mcp_server.py`, built with the official Python MCP SDK (FastMCP). It exposes the pipeline as six callable tools instead of a single-shot script, so any MCP-compatible client can drive it directly.
 
 ### Tools
 
@@ -161,6 +164,7 @@ EduAgent-OS ships with an MCP (Model Context Protocol) server, `src/mcp_server.p
 | `get_flashcards()` | Returns the Anki-compatible flashcard table from the most recent run. |
 | `get_evaluation()` | Returns the structured `LectureEvaluation` JSON from the most recent run. |
 | `get_transcript()` | Returns the raw timestamped transcript from the most recent run. |
+| `export_pdf()` | Compiles the latest study notes into a print-ready PDF with headers and page numbers. |
 
 ### Local setup
 
@@ -241,6 +245,8 @@ Note: Hugging Face's persistent storage add-on has been discontinued, so `worksp
 ## Security Model
 
 Credentials are never stored in code or committed to version control. The `GEMINI_API_KEY` is passed into the container exclusively through Docker Compose's `environment` block, sourced from the local shell or a `.env` file that is explicitly excluded by `.gitignore`. The `workspace/` directory is also excluded to prevent accidental commits of transcribed audio content.
+
+Beyond credential handling, the ingestion surface is hardened for public deployment: remote URLs are validated against a YouTube host whitelist before any network call (preventing the demo from being used as an SSRF proxy), local file paths are resolved with `os.path.realpath` and rejected unless they live inside the workspace directory (preventing arbitrary container file reads), and URLs without an extractable video ID are rejected rather than falling back to a shared cache filename. Transcript content is wrapped in explicit delimiters and every prompt instructs the model to treat it as data, mitigating prompt injection from malicious lecture audio. The container drops root privileges via a dedicated `appuser`, and the Gradio frontend gives each request its own temporary workspace so concurrent users can never read or overwrite each other's artifacts.
 
 ---
 

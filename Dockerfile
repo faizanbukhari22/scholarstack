@@ -28,6 +28,11 @@ RUN mkdir -p /app/workspace
 COPY src/ /app/src/
 COPY app.py /app/app.py
 
+# Run as a non-root user: a compromise of yt-dlp, ffmpeg, or the web frontend
+# should not grant root inside the container.
+RUN useradd --create-home appuser && chown -R appuser:appuser /app
+USER appuser
+
 ENV PYTHONPATH=/app
 # Explicit path to baked model weights — read by transcriber.py at runtime
 ENV WHISPER_MODEL_PATH="/app/models"

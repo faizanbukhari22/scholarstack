@@ -1,7 +1,8 @@
 {
   "factual_consistency_score": 0.95,
   "summary_quality_score": 0.98,
-  "hallucination_detected": true,
+  "hallucination_detected": false,
+  "hallucinated_claims": [],
   "missing_critical_terms": [
     "ChatGPT prompts",
     "Hugging Face",
@@ -12,7 +13,7 @@
     "AASN tools, skills, security, deployment",
     "Badge and certificate eligibility (participation vs. code labs)",
     "Badge and certificate award date (July 2026)",
-    "Four project tracks (Good, Business, Concise, Freestyle)",
+    "Four project tracks (Good, Business, Concierge, Freestyle)",
     "Team formation rules (individual or up to 4)",
     "Submission deadline (July 6, 2026)",
     "Winner announcement date (end of July 2026)",

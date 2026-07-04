@@ -58,7 +58,27 @@ def _resolve_workspace_dir() -> str:
 WORKSPACE_DIR = _resolve_workspace_dir()
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 
+
+def get_workspace_paths(workspace_dir=None):
+    """Return the artifact paths for a given workspace directory.
+
+    Passing an explicit directory lets callers (e.g. the Gradio frontend)
+    isolate each request in its own workspace instead of sharing the
+    module-level default, which prevents cross-user data leakage.
+    """
+    base = workspace_dir or WORKSPACE_DIR
+    os.makedirs(base, exist_ok=True)
+    return {
+        "workspace": base,
+        "transcript": os.path.join(base, "transcript.txt"),
+        "notes": os.path.join(base, "notes.md"),
+        "flashcards": os.path.join(base, "flashcards.md"),
+        "evaluation": os.path.join(base, "evaluation.json"),
+        "pdf": os.path.join(base, "notes.pdf"),
+    }
+
 TRANSCRIPT_PATH = os.path.join(WORKSPACE_DIR, "transcript.txt")
 NOTES_PATH = os.path.join(WORKSPACE_DIR, "notes.md")
 FLASHCARDS_PATH = os.path.join(WORKSPACE_DIR, "flashcards.md")
 EVALUATION_PATH = os.path.join(WORKSPACE_DIR, "evaluation.json")
+PDF_PATH = os.path.join(WORKSPACE_DIR, "notes.pdf")

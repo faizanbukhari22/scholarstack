@@ -27,8 +27,10 @@ from src.config import (
     FLASHCARDS_PATH,
     EVALUATION_PATH,
     TRANSCRIPT_PATH,
+    PDF_PATH,
 )
 from src.main import run_educational_pipeline
+from src.tools.pdf_generator import compile_markdown_to_pdf
 
 mcp = FastMCP("eduagent_mcp")
 
@@ -116,6 +118,7 @@ async def process_lecture(params: ProcessLectureInput) -> str:
                 "factual_consistency_score": float,   # 0.0-1.0
                 "summary_quality_score": float,       # 0.0-1.0
                 "hallucination_detected": bool,
+                "hallucinated_claims": [str, ...],    # ungrounded claims found
                 "missing_critical_terms": [str, ...],
                 "key_concepts_covered": [str, ...]
             }
@@ -229,6 +232,7 @@ async def get_evaluation() -> str:
             "factual_consistency_score": float,   # 0.0-1.0
             "summary_quality_score": float,       # 0.0-1.0
             "hallucination_detected": bool,
+            "hallucinated_claims": [str, ...],    # ungrounded claims found
             "missing_critical_terms": [str, ...],
             "key_concepts_covered": [str, ...]
         }
@@ -268,6 +272,48 @@ async def get_transcript() -> str:
     """
     try:
         return _read_file(TRANSCRIPT_PATH, "Transcript")
+    except Exception as e:
+        return _handle_error(e)
+
+
+@mcp.tool(
+    name="export_pdf",
+    annotations={
+        "title": "Export Study Guide to PDF",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def export_pdf() -> str:
+    """Compile the latest generated Markdown study notes into a print-ready PDF document.
+
+    Reads 'notes.md' from the workspace directory and saves it as 'notes.pdf'
+    with running headers and page numbers. This does not trigger a full lecture run - 
+    call 'process_lecture' first to generate the notes.
+
+    Returns:
+        str: A JSON-formatted string containing the success status and the absolute
+        path to the generated PDF document, or "Error: <message>" if it fails.
+    """
+    try:
+        # Check if notes.md exists first
+        if not os.path.exists(NOTES_PATH):
+            raise FileNotFoundError(
+                "Study notes file (notes.md) not found. "
+                "Call 'process_lecture' first to generate notes before exporting to PDF."
+            )
+        
+        # Compile Markdown to PDF
+        compile_markdown_to_pdf(NOTES_PATH, PDF_PATH)
+        
+        response = {
+            "status": "success",
+            "pdf_path": PDF_PATH,
+            "message": f"Successfully compiled study guide PDF at: {PDF_PATH}"
+        }
+        return json.dumps(response, indent=2)
     except Exception as e:
         return _handle_error(e)
 

@@ -23,7 +23,7 @@ EduAgent-OS is a containerized, production-grade multi-agent pipeline. A user pr
 1. Downloads and extracts the audio stream locally using yt-dlp
 2. Transcribes it on-device using faster-whisper -- no audio leaves the container
 3. Dispatches two specialized AI agents in parallel to synthesize study materials
-4. Runs a structured verification agent that scores the output for hallucinations and factual drift before writing anything to disk
+4. Runs a structured verification agent that scores the output for hallucinations and factual drift; if the audit flags ungrounded claims or low consistency, the findings are fed back to the synthesis agents for a revision pass and the revised outputs are re-audited before final delivery
 
 The result is four files written to the user's workspace folder:
 
@@ -48,7 +48,7 @@ The two synthesis agents have fundamentally different jobs. The Academic Synthes
 
 ## Architecture
 
-The system is organized into four isolated, deterministic layers:
+The system is organized into five isolated, deterministic layers:
 
 ### Layer 1 -- Ingestion (media_fetcher.py)
 
@@ -68,7 +68,7 @@ The core multi-agent loop. Two Gemini agents are dispatched concurrently using `
 
 Both agents receive the same timestamped transcript and run simultaneously. Neither blocks the other. Their outputs are written to `workspace/notes.md` and `workspace/flashcards.md` once both complete.
 
-### Layer 4 -- Structured Verification (schema.py)
+### Layer 4 -- Structured Verification with Correction Loop (schema.py)
 
 A third Gemini call audits both outputs against the original transcript. The agent is constrained to respond strictly in JSON conforming to the `LectureEvaluation` Pydantic v2 model, enforced via `response_schema` and `response_mime_type="application/json"`:
 
@@ -77,21 +77,26 @@ class LectureEvaluation(BaseModel):
     factual_consistency_score: float
     summary_quality_score: float
     hallucination_detected: bool
+    hallucinated_claims: list[str]
     missing_critical_terms: list[str]
     key_concepts_covered: list[str]
 ```
 
-This is not optional post-processing. The verification result is written to `workspace/evaluation.json` as a persistent audit artifact. A student can open this file and see exactly which terms were missed and whether any claim in the notes cannot be grounded in the source.
+This is not optional post-processing -- it is a quality gate. If the audit reports hallucinated claims or a factual consistency score below a configurable threshold (default 0.85), the pipeline feeds the audit findings back to both synthesis agents for one revision pass and re-audits the revised outputs before delivery. The judge model is separately configurable (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final verification result is written to `workspace/evaluation.json` as a persistent audit artifact: a student can open this file and see exactly which claims were flagged as ungrounded and which transcript terms were omitted.
+
+### Layer 5 -- MCP Server (mcp_server.py)
+
+The entire pipeline is also exposed as an MCP (Model Context Protocol) server, so any MCP-compatible client can drive EduAgent-OS as a composable tool rather than a standalone script (see Key Concepts below).
 
 ---
 
 ## Key Concepts Demonstrated
 
-**Multi-Agent System:** Two specialized sub-agents (Academic Synthesis Specialist and Educational Taxonomist) run in parallel via `asyncio.gather` with `asyncio.to_thread`, followed by a third independent verification agent. Each has a distinct role, distinct instruction set, and distinct output artifact.
+**Multi-Agent System:** Two specialized sub-agents (Academic Synthesis Specialist and Educational Taxonomist) run in parallel via `asyncio.gather` with `asyncio.to_thread`, followed by a third independent verification agent whose audit can trigger a revision pass -- a closed agentic loop, not a linear script. Each agent has a distinct role, distinct instruction set, and distinct output artifact.
 
-**MCP Server:** The full pipeline is also exposed as an MCP (Model Context Protocol) server (`src/mcp_server.py`, built with the official Python MCP SDK / FastMCP) with five tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, and `get_transcript`. Claude Desktop, Claude Code, or any MCP-compatible client can drive EduAgent-OS as a composable tool rather than a standalone script.
+**MCP Server:** The full pipeline is also exposed as an MCP (Model Context Protocol) server (`src/mcp_server.py`, built with the official Python MCP SDK / FastMCP) with six tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, and `export_pdf`. Claude Desktop, Claude Code, or any MCP-compatible client can drive EduAgent-OS as a composable tool rather than a standalone script.
 
-**Security Features:** The Gemini API key is never stored in code or committed to version control. It is passed into the container exclusively through Docker Compose's `environment` block, sourced from a local `.env` file that is explicitly excluded by `.gitignore`. Audio data never leaves the container boundary -- all transcription is performed locally by faster-whisper. The workspace directory containing user data is also gitignored.
+**Security Features:** The Gemini API key is never stored in code or committed to version control. It is passed into the container exclusively through Docker Compose's `environment` block, sourced from a local `.env` file that is explicitly excluded by `.gitignore`. Audio data never leaves the container boundary -- all transcription is performed locally by faster-whisper. The workspace directory containing user data is also gitignored. The ingestion surface is hardened for public deployment: remote URLs are validated against a YouTube host whitelist before any network call (SSRF prevention), local file paths are sandboxed to the workspace directory (no arbitrary container file reads), transcript content is delimited and marked as untrusted data in every prompt (prompt-injection mitigation), the container runs as a non-root user, and the web demo isolates each request in its own temporary workspace so concurrent users can never see each other's data.
 
 **Deployability:** The project is fully containerized via Docker and Docker Compose. A `python:3.11-slim` base image with explicit platform handling ensures reproducibility across ARM64 and AMD64 architectures. A GitHub Actions CI pipeline (`ci.yml`) runs flake8 static analysis on every push to `main`, with a hard-fail pass for syntax errors and undefined names.
 
@@ -115,15 +120,16 @@ Running `docker-compose up --build` on the Kaggle capstone overview lecture prod
 
 ```
 [Fetcher] Cache hit -- skipping download: X6eGCO_5KOA.mp3
-[Transcriber] Initializing local Whisper model (base) from: /app/models...
-[Orchestrator] Running specialized generation workloads in parallel...
-[Orchestrator] Activating semantic and structural verification layer...
+[Transcriber] Attempting to load Whisper model (base) from baked cache: /app/models...
+[Pipeline Progress] 55%: Generating structured study notes and flashcards in parallel...
+[Pipeline Progress] 75%: Running factual audit and hallucination checks...
 
 [Evaluation Report Results]:
 {
   "factual_consistency_score": 0.95,
   "summary_quality_score": 0.98,
-  "hallucination_detected": true,
+  "hallucination_detected": false,
+  "hallucinated_claims": [],
   "missing_critical_terms": ["ChatGPT prompts", "Hugging Face", "ADK"],
   "key_concepts_covered": [
     "Capstone Project purpose and scope",
@@ -136,7 +142,7 @@ Running `docker-compose up --build` on the Kaggle capstone overview lecture prod
 }
 ```
 
-`hallucination_detected: true` here is the verification layer working correctly, not a failure. The auditor identified three terms present in the transcript that the synthesis agents omitted from the study materials. This is exactly the catch the quality gate is designed to surface.
+The auditor confirmed every claim in the outputs is grounded in the transcript (`hallucinated_claims` is empty) while still surfacing three transcript terms the synthesis agents omitted -- useful signal for the student even when the quality gate passes. Had any ungrounded claim been found, or had consistency dropped below the 0.85 threshold, the pipeline would have automatically run a revision pass and re-audited before delivering the files.
 
 ---
 
@@ -148,7 +154,7 @@ Integrating faster-whisper locally solved the transcription problem but introduc
 
 The parallel agent architecture came from recognizing that sequential prompting was slow and the two synthesis tasks were entirely independent. Switching to `asyncio.gather` with thread-based dispatch cut the generation phase to the time of the slower agent rather than the sum of both.
 
-The verification layer was added last, after realizing that an unverified AI-generated summary is potentially worse than no summary at all. Using Pydantic's `response_schema` enforcement meant the audit result is always a typed, machine-readable object rather than a paragraph that needs to be interpreted.
+The verification layer was added last, after realizing that an unverified AI-generated summary is potentially worse than no summary at all. Using Pydantic's `response_schema` enforcement meant the audit result is always a typed, machine-readable object rather than a paragraph that needs to be interpreted. The final step was turning that audit from a passive report into an active gate: flagged outputs are revised once with the audit findings as feedback and re-audited, closing the agent loop.
 
 ---
 
