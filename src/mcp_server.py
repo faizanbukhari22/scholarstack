@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-MCP server for EduAgent-OS.
+MCP server for ScholarStack.
 
 Exposes the lecture-to-study-materials pipeline (media ingestion, local
 transcription, parallel note/flashcard synthesis, and structured hallucination
 evaluation) as MCP tools. Any MCP-compatible client (Claude Desktop, Claude
-Code, or another agent) can call these tools to drive EduAgent-OS as a
+Code, or another agent) can call these tools to drive ScholarStack as a
 building block rather than a standalone script.
 
 Run directly (stdio transport):
@@ -31,7 +31,7 @@ from src.tools.media_fetcher import get_or_create_lecture_dir
 from src.main import run_educational_pipeline
 from src.tools.pdf_generator import compile_markdown_to_pdf
 
-mcp = FastMCP("eduagent_mcp")
+mcp = FastMCP("scholarstack_mcp")
 
 
 class ProcessLectureInput(BaseModel):
@@ -138,7 +138,7 @@ def _handle_error(e: Exception) -> str:
     },
 )
 async def process_lecture(params: ProcessLectureInput) -> str:
-    """Run the full EduAgent-OS pipeline against a YouTube lecture or audio file.
+    """Run the full ScholarStack pipeline against a YouTube lecture or audio file.
 
     This tool ingests the source, transcribes it locally, dispatches Gemini agents
     to generate study notes and flashcards, and performs a hallucination verification check.

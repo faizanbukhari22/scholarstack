@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gradio frontend for EduAgent-OS.
+Gradio frontend for ScholarStack.
 
 Serves the containerized pipeline (ingestion, local transcription, parallel
 Gemini synthesis, and structured hallucination verification) as an
@@ -31,7 +31,7 @@ def _sanitize_error(e: Exception) -> str:
     return f"{type(e).__name__}: {msg}"
 
 DESCRIPTION = (
-    "Paste a YouTube lecture URL below. EduAgent-OS transcribes it locally with "
+    "Paste a YouTube lecture URL below. ScholarStack transcribes it locally with "
     "faster-whisper, dispatches two parallel Gemini agents to write structured "
     "study notes and Anki-style flashcards, then runs a verification pass that "
     "audits both outputs for factual consistency and hallucinations.\n\n"
@@ -220,13 +220,13 @@ theme = gr.themes.Soft(
     input_border_color="#334155",
 )
 
-with gr.Blocks(title="EduAgent-OS") as demo:
+with gr.Blocks(title="ScholarStack") as demo:
     gr.HTML("""
     <div style="text-align: center; padding: 2rem 1rem; background: linear-gradient(135deg, rgba(255, 126, 95, 0.1) 0%, rgba(254, 180, 123, 0.05) 100%); border: 1px solid rgba(255, 126, 95, 0.2); border-radius: 12px; margin-bottom: 2rem; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4); backdrop-filter: blur(5px);">
         <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(255, 126, 95, 0.15); border: 1px solid rgba(255, 126, 95, 0.3); border-radius: 30px; padding: 0.25rem 0.75rem; margin-bottom: 1rem;">
             <span style="font-size: 0.75rem; font-weight: 700; color: #ffb4a2; letter-spacing: 0.05em; text-transform: uppercase;">🎓 Capstone Showcase -- Agents for Good</span>
         </div>
-        <h1 style="font-size: 3rem; font-weight: 900; background: linear-gradient(90deg, #ff7e5f, #feb47b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 0.5rem 0; letter-spacing: -0.02em;">EduAgent-OS</h1>
+        <h1 style="font-size: 3rem; font-weight: 900; background: linear-gradient(90deg, #ff7e5f, #feb47b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 0.5rem 0; letter-spacing: -0.02em;">ScholarStack</h1>
         <p style="font-size: 1.1rem; color: #94a3b8; max-width: 650px; margin: 0 auto; line-height: 1.6;">
             Transform any YouTube lecture or local audio into structured study notes, flashcards, and a hallucination audit report -- fully local, fully verified.
         </p>

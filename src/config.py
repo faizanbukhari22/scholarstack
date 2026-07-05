@@ -1,5 +1,5 @@
 """
-Shared runtime configuration for EduAgent-OS.
+Shared runtime configuration for ScholarStack.
 
 Centralizes the workspace directory resolution so the same pipeline code
 works identically whether it is invoked as the Docker Compose batch job

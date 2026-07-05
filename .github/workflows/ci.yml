@@ -1,4 +1,4 @@
-name: EduAgent-OS CI Gate
+name: ScholarStack CI Gate
 
 on:
   push:

@@ -1,7 +1,7 @@
 services:
-  eduagent:
+  scholarstack:
     build: .
-    container_name: eduagent_os_runtime
+    container_name: scholarstack_runtime
     # Override the image's default entrypoint (the Gradio web demo used by
     # Hugging Face Spaces) to run the one-shot batch pipeline locally instead.
     command: python src/main.py

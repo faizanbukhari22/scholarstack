@@ -1,5 +1,5 @@
 ---
-title: EduAgent-OS
+title: ScholarStack
 emoji: 📚
 colorFrom: indigo
 colorTo: blue
@@ -9,7 +9,7 @@ suggested_hardware: cpu-basic
 short_description: Turn any YouTube lecture into study notes, flashcards, and a hallucination audit
 ---
 
-# EduAgent-OS
+# ScholarStack
 
 **Track: Agents for Good**
 
@@ -21,7 +21,7 @@ A containerized, production-grade multi-agent pipeline that transforms any YouTu
 
 Students and self-learners spend a significant amount of time manually re-watching lectures, pausing to take notes, and building flashcard decks - work that is repetitive and time-consuming but adds no conceptual value. Existing tools either require manual input, send audio to expensive cloud APIs, or produce unverified outputs with no quality guarantee.
 
-EduAgent-OS solves this by running a fully automated, containerized agent pipeline: it ingests a lecture URL or local audio file, transcribes it locally using a hardware-native ML model, dispatches two specialized AI agents in parallel to synthesize study materials, and then runs a structured verification pass that scores the output for factual consistency and hallucination detection before writing everything to disk.
+ScholarStack solves this by running a fully automated, containerized agent pipeline: it ingests a lecture URL or local audio file, transcribes it locally using a hardware-native ML model, dispatches two specialized AI agents in parallel to synthesize study materials, and then runs a structured verification pass that scores the output for factual consistency and hallucination detection before writing everything to disk.
 
 ---
 
@@ -55,10 +55,10 @@ After generation, a verification agent audits both outputs against the original 
 | `missing_critical_terms` | list[str] | Important concepts omitted from the outputs |
 | `key_concepts_covered` | list[str] | Important concepts successfully captured |
 
-The audit is a real quality gate, not a passive report: if `hallucination_detected` is true or `factual_consistency_score` falls below a configurable threshold (`EDUAGENT_MIN_CONSISTENCY`, default 0.85), the audit findings are fed back to both synthesis agents for a revision pass and the revised outputs are re-audited before delivery. The judge model is independently configurable via `EDUAGENT_JUDGE_MODEL` (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final result is printed to stdout and saved to `evaluation.json` in the lecture's library folder.
+The audit is a real quality gate, not a passive report: if `hallucination_detected` is true or `factual_consistency_score` falls below a configurable threshold (`SCHOLARSTACK_MIN_CONSISTENCY`, default 0.85), the audit findings are fed back to both synthesis agents for a revision pass and the revised outputs are re-audited before delivery. The judge model is independently configurable via `SCHOLARSTACK_JUDGE_MODEL` (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final result is printed to stdout and saved to `evaluation.json` in the lecture's library folder.
 
 ### Layer 5 - MCP Server (`src/mcp_server.py`)
-The entire pipeline is also exposed as an MCP (Model Context Protocol) server named `eduagent_mcp`, so any MCP-compatible client (Claude Desktop, Claude Code, or another agent) can call EduAgent-OS as a tool rather than running it as a standalone script. See [MCP Server](#mcp-server) below.
+The entire pipeline is also exposed as an MCP (Model Context Protocol) server named `scholarstack_mcp`, so any MCP-compatible client (Claude Desktop, Claude Code, or another agent) can call ScholarStack as a tool rather than running it as a standalone script. See [MCP Server](#mcp-server) below.
 
 ---
 
@@ -86,8 +86,8 @@ The entire pipeline is also exposed as an MCP (Model Context Protocol) server na
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/faizanbukhari22/eduagent-os.git
-cd eduagent-os
+git clone https://github.com/faizanbukhari22/scholarstack.git
+cd scholarstack
 ```
 
 Create a `.env` file in the project root (this file is gitignored and never committed):
@@ -130,7 +130,7 @@ The folder suffix (e.g. `__yt_X6eGCO5KOA`) is the unique identity key. The human
 ## Project Structure
 
 ```
-eduagent-os/
+scholarstack/
 ├── app.py                   # Gradio frontend - Docker/HF Spaces default entrypoint
 ├── src/
 │   ├── main.py              # Orchestration loop and async agent dispatch
@@ -162,7 +162,7 @@ eduagent-os/
 
 ## MCP Server
 
-EduAgent-OS ships with an MCP (Model Context Protocol) server, `src/mcp_server.py`, built with the official Python MCP SDK (FastMCP). It exposes the pipeline as seven callable tools instead of a single-shot script, so any MCP-compatible client can drive it directly.
+ScholarStack ships with an MCP (Model Context Protocol) server, `src/mcp_server.py`, built with the official Python MCP SDK (FastMCP). It exposes the pipeline as seven callable tools instead of a single-shot script, so any MCP-compatible client can drive it directly.
 
 ### Tools
 
@@ -200,10 +200,10 @@ Add an entry to your MCP client's server configuration (e.g. `claude_desktop_con
 ```json
 {
   "mcpServers": {
-    "eduagent_mcp": {
+    "scholarstack_mcp": {
       "command": "python",
       "args": ["-m", "src.mcp_server"],
-      "cwd": "/absolute/path/to/eduagent-os",
+      "cwd": "/absolute/path/to/scholarstack",
       "env": {
         "PYTHONPATH": ".",
         "GEMINI_API_KEY": "your_api_key_here"
@@ -238,7 +238,7 @@ Secrets are injected into the container as environment variables at runtime and 
 ### 3. Push this repository to the Space
 
 ```bash
-git remote add space https://huggingface.co/spaces/<your-username>/eduagent-os
+git remote add space https://huggingface.co/spaces/<your-username>/scholarstack
 git push space main
 ```
 

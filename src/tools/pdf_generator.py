@@ -27,7 +27,7 @@ class StudyGuidePDF(FPDF):
         # Set top margin border
         self.set_font("helvetica", "B", 8)
         self.set_text_color(100, 116, 139)  # Slate 500
-        self.cell(0, 10, "EduAgent-OS -- Autonomous Lecture Notes", align="L")
+        self.cell(0, 10, "ScholarStack -- Autonomous Lecture Notes", align="L")
         self.cell(0, 10, "Study Guide", align="R", new_x="LMARGIN", new_y="NEXT")
         
         # Draw top thin rule

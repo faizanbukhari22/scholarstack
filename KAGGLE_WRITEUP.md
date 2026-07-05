@@ -1,4 +1,4 @@
-# EduAgent-OS: Containerized Multi-Agent Pipeline for Autonomous Lecture Intelligence
+# ScholarStack: Containerized Multi-Agent Pipeline for Autonomous Lecture Intelligence
 
 **Subtitle:** From any YouTube lecture URL to structured study notes, flashcards, and a hallucination audit report -- in under 3 minutes, with zero cloud transcription costs and zero manual effort.
 
@@ -12,13 +12,13 @@ Students and self-learners spend enormous amounts of time on a task that adds no
 
 Existing tools fail this use case in one of three ways. They either require manual input from the user, send audio to expensive cloud transcription APIs that accumulate per-minute costs, or produce unverified outputs with no quality guarantee. A student who trusts an AI-generated summary that hallucinated a definition has been actively harmed, not helped.
 
-EduAgent-OS was built to solve all three failure modes at once: fully automated, fully local transcription, and a structured verification pass that audits the output for factual consistency before the student ever reads it.
+ScholarStack was built to solve all three failure modes at once: fully automated, fully local transcription, and a structured verification pass that audits the output for factual consistency before the student ever reads it.
 
 ---
 
 ## The Solution
 
-EduAgent-OS is a containerized, production-grade multi-agent pipeline. A user provides a YouTube lecture URL or a local audio file. The system handles everything else:
+ScholarStack is a containerized, production-grade multi-agent pipeline. A user provides a YouTube lecture URL or a local audio file. The system handles everything else:
 
 1. Downloads and extracts the audio stream locally using yt-dlp
 2. Transcribes it on-device using faster-whisper -- no audio leaves the container
@@ -43,7 +43,7 @@ The pipeline is fully containerized via Docker and Compose, runs on any machine 
 
 This problem is not solvable with a single prompt. Three distinct specialized behaviors are required, and they must happen in a specific sequence with a verification pass at the end.
 
-A single generalist prompt would produce mediocre notes with no specialization, no parallel efficiency, and no quality gate. By separating the work into agents with distinct roles and running them concurrently, EduAgent-OS produces better output faster and then validates it before delivery.
+A single generalist prompt would produce mediocre notes with no specialization, no parallel efficiency, and no quality gate. By separating the work into agents with distinct roles and running them concurrently, ScholarStack produces better output faster and then validates it before delivery.
 
 The two synthesis agents have fundamentally different jobs. The Academic Synthesis Specialist is instructed to think like a professor organizing a lecture into study materials. The Educational Taxonomist is instructed to think like an exam designer extracting testable facts. Neither role produces good output from the other's instruction set. The verification agent is a third role entirely: a critical auditor comparing output against source rather than generating anything new.
 
@@ -89,7 +89,7 @@ This is not optional post-processing -- it is a quality gate. If the audit repor
 
 ### Layer 5 -- MCP Server (mcp_server.py)
 
-The entire pipeline is also exposed as an MCP (Model Context Protocol) server, so any MCP-compatible client can drive EduAgent-OS as a composable tool. It exposes seven tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`, and `list_library` (which returns a JSON list of all completed lectures).
+The entire pipeline is also exposed as an MCP (Model Context Protocol) server, so any MCP-compatible client can drive ScholarStack as a composable tool. It exposes seven tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`, and `list_library` (which returns a JSON list of all completed lectures).
 
 ---
 
@@ -97,7 +97,7 @@ The entire pipeline is also exposed as an MCP (Model Context Protocol) server, s
 
 **Multi-Agent System:** Two specialized sub-agents (Academic Synthesis Specialist and Educational Taxonomist) run in parallel via `asyncio.gather` with `asyncio.to_thread`, followed by a third independent verification agent whose audit can trigger a revision pass -- a closed agentic loop, not a linear script. Each agent has a distinct role, distinct instruction set, and distinct output artifact.
 
-**MCP Server:** The full pipeline is also exposed as an MCP (Model Context Protocol) server (`src/mcp_server.py`, built with the official Python MCP SDK / FastMCP) with seven tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`, and `list_library`. Claude Desktop, Claude Code, or any MCP-compatible client can drive EduAgent-OS as a composable tool.
+**MCP Server:** The full pipeline is also exposed as an MCP (Model Context Protocol) server (`src/mcp_server.py`, built with the official Python MCP SDK / FastMCP) with seven tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`, and `list_library`. Claude Desktop, Claude Code, or any MCP-compatible client can drive ScholarStack as a composable tool.
 
 **Security Features:** The Gemini API key is never stored in code or committed to version control. A dedicated environment store in `src/config.py` loads keys from `.env` without polluting `os.environ` (preventing subprocesses like ffmpeg or yt-dlp from leaking keys in crash logs). Audio data never leaves the container boundary -- all transcription is performed locally. The ingestion surface is hardened for public deployment: remote URLs are validated against a YouTube host whitelist (SSRF prevention), local file paths are sandboxed to the workspace directory (no arbitrary container file reads), transcript content is wrapped in explicit delimiters (prompt-injection mitigation), and each lecture is isolated in its own library folder with atomic file locking (`O_CREAT | O_EXCL`) so concurrent runs for the same lecture are serialized and can never corrupt each other's artifacts.
 
@@ -168,8 +168,8 @@ The verification layer was added last, after realizing that an unverified AI-gen
 **Requirements:** Docker, Docker Compose v2.0+, Google AI Studio API key.
 
 ```bash
-git clone https://github.com/faizanbukhari22/eduagent-os.git
-cd eduagent-os
+git clone https://github.com/faizanbukhari22/scholarstack.git
+cd scholarstack
 echo "GEMINI_API_KEY=your_key_here" > .env
 docker-compose up --build
 ```
@@ -185,4 +185,4 @@ Output files appear in `workspace/` on the host machine after the container exit
 
 ## Conclusion
 
-EduAgent-OS demonstrates that multi-agent systems are most valuable when the problem genuinely requires distinct specialized behaviors operating in parallel with a verification pass at the end. The architecture directly mirrors how good human study groups work: one person focuses on narrative structure, another on extracting testable facts, and a third checks both against the source. The difference is that EduAgent-OS does this in under 3 minutes for any lecture on the internet.
+ScholarStack demonstrates that multi-agent systems are most valuable when the problem genuinely requires distinct specialized behaviors operating in parallel with a verification pass at the end. The architecture directly mirrors how good human study groups work: one person focuses on narrative structure, another on extracting testable facts, and a third checks both against the source. The difference is that ScholarStack does this in under 3 minutes for any lecture on the internet.

@@ -14,17 +14,17 @@ from src.tools.transcriber import transcribe_audio_file
 from src.schema import LectureEvaluation
 
 # Generation model for the two synthesis agents.
-GEN_MODEL = os.getenv("EDUAGENT_GEN_MODEL", "gemini-2.5-flash")
+GEN_MODEL = os.getenv("SCHOLARSTACK_GEN_MODEL", "gemini-2.5-flash")
 # Judge model for the verification pass. Kept separately configurable so a
 # stronger/different model (e.g. gemini-2.5-pro) can audit the flash outputs,
 # reducing self-grading bias.
-JUDGE_MODEL = os.getenv("EDUAGENT_JUDGE_MODEL", "gemini-2.5-flash")
+JUDGE_MODEL = os.getenv("SCHOLARSTACK_JUDGE_MODEL", "gemini-2.5-flash")
 # Factual consistency score below which a revision pass is triggered.
-MIN_CONSISTENCY = float(os.getenv("EDUAGENT_MIN_CONSISTENCY", "0.85"))
+MIN_CONSISTENCY = float(os.getenv("SCHOLARSTACK_MIN_CONSISTENCY", "0.85"))
 # A lock file older than this is considered abandoned (crashed run) and is
 # broken by the next request. Long lectures on CPU-basic hardware can
 # legitimately transcribe for a long time, so keep this generous.
-LOCK_STALE_SECONDS = float(os.getenv("EDUAGENT_LOCK_STALE_SECONDS", "7200"))
+LOCK_STALE_SECONDS = float(os.getenv("SCHOLARSTACK_LOCK_STALE_SECONDS", "7200"))
 
 
 def _acquire_lecture_lock(lock_path: str) -> bool:
@@ -462,7 +462,7 @@ async def _process_lecture(
 
     print(f"\n[Evaluation Report Results]:\n{evaluation_text}")
 
-    report_progress(1.00, "EduAgent-OS run completed successfully.")
+    report_progress(1.00, "ScholarStack run completed successfully.")
 
     return evaluation_text
 
