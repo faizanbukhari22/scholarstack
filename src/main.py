@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import random
+import re
 from typing import Callable, Optional
 
 from google import genai
@@ -102,6 +103,55 @@ async def generate_content_with_retry(
                 raise e
 
 
+# A Markdown table separator row: only pipes, colons, dashes, and spaces,
+# containing at least three dashes (e.g. "| :--- | --- |").
+_TABLE_SEP_RE = re.compile(r'^\|?[\s:|-]*-{3}[\s:|-]*\|?$')
+
+
+def sanitize_markdown_tables(text: str) -> str:
+    """Repair malformed Markdown tables in model output.
+
+    LLMs occasionally emit pathological tables: separator rows tens of
+    thousands of dashes long, duplicated header rows, or stray separators in
+    the table body. Any of these makes Markdown renderers (e.g. Gradio's) fall
+    back to plain text, displaying a wall of dashes. This normalizes dash runs
+    to '---', keeps only the one separator that belongs directly under the
+    header, and drops duplicated header rows inside the body.
+    """
+    lines = text.splitlines()
+    out = []
+    table_open = False   # header + separator already emitted
+    header_row = None
+    for line in lines:
+        stripped = line.strip()
+        is_pipe_row = stripped.startswith("|")
+        if not is_pipe_row:
+            table_open = False
+            header_row = None
+            out.append(line)
+            continue
+        if _TABLE_SEP_RE.match(stripped):
+            if table_open:
+                continue  # stray separator inside the body -> drop
+            if out and out[-1].strip().startswith("|"):
+                header_row = out[-1].strip()
+                # Rebuild the separator from the header's column count instead
+                # of trusting the model's row, which may have the wrong number
+                # of columns (a mismatch also breaks rendering).
+                n_cols = len([c for c in header_row.strip("|").split("|")])
+                out.append("|" + " --- |" * n_cols)
+                table_open = True
+            # separator with no header above it -> drop
+            continue
+        if table_open and stripped == header_row:
+            continue  # duplicated header row inside the body -> drop
+        out.append(line)
+    result = "\n".join(out)
+    if text.endswith("\n"):
+        result += "\n"
+    return result
+
+
 def _wrap_untrusted(label: str, text: str) -> str:
     """Delimit user-controlled content so it is treated as data, not instructions.
 
@@ -137,7 +187,11 @@ async def _generate_study_materials(client, transcript_block: str, audit_feedbac
     taxonomy_prompt = (
         "You are an Educational Taxonomist. Extract all critical terminology, formulas, "
         "and mathematical equations from the transcript into a Q&A table matrix compatible with Anki. "
-        "Only include facts that are grounded in the transcript."
+        "Only include facts that are grounded in the transcript. "
+        "Format the output as a single Markdown table with a header row of "
+        "'| Question | Answer |' followed by a separator row of exactly "
+        "'| --- | --- |' on one short line, then one row per card. Emit the "
+        "header and separator exactly once and never repeat them."
         f"{feedback_block}\n\n{transcript_block}"
     )
 
@@ -368,7 +422,8 @@ async def _process_lecture(
     # 4. Parallel synthesis pass
     report_progress(0.55, "Generating structured study notes and flashcards in parallel...")
     notes_response, flash_response = await _generate_study_materials(client, transcript_block)
-    notes_text, flash_text = notes_response.text, flash_response.text
+    notes_text = sanitize_markdown_tables(notes_response.text)
+    flash_text = sanitize_markdown_tables(flash_response.text)
 
     # 5. Verification pass
     report_progress(0.75, "Running factual audit and hallucination checks...")
@@ -381,7 +436,8 @@ async def _process_lecture(
         notes_response, flash_response = await _generate_study_materials(
             client, transcript_block, audit_feedback=evaluation_text
         )
-        notes_text, flash_text = notes_response.text, flash_response.text
+        notes_text = sanitize_markdown_tables(notes_response.text)
+        flash_text = sanitize_markdown_tables(flash_response.text)
         evaluation_text = await _run_verification(client, transcript_block, notes_text, flash_text)
 
     # 7. Persist final artifacts atomically
