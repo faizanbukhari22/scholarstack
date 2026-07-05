@@ -3,3 +3,4 @@ workspace/
 __pycache__/
 *.mp3
 .DS_Store
+.agents/

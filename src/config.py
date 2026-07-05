@@ -11,8 +11,14 @@ import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+# Module-level store for .env values. Avoids polluting os.environ (which is
+# inherited by every subprocess — ffmpeg, yt-dlp — and can leak API keys if
+# those processes log their environment on crash).
+_env_store: dict[str, str] = {}
+
+
 def _load_env_file():
-    """Load keys from .env if present and not already in environment."""
+    """Load keys from .env if present into the module-level store."""
     env_path = os.path.join(PROJECT_ROOT, ".env")
     if os.path.exists(env_path):
         try:
@@ -27,10 +33,15 @@ def _load_env_file():
                         val = val.strip()
                         if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
                             val = val[1:-1]
-                        if key and key not in os.environ:
-                            os.environ[key] = val
+                        if key:
+                            _env_store[key] = val
         except Exception as e:
             print(f"[Config] Warning: Failed to load .env file: {e}")
+
+
+def get_env(key: str, default: str = "") -> str:
+    """Read a config value: os.environ takes priority, then .env store."""
+    return os.getenv(key) or _env_store.get(key, default)
 
 
 _load_env_file()
@@ -59,26 +70,21 @@ WORKSPACE_DIR = _resolve_workspace_dir()
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 
 
-def get_workspace_paths(workspace_dir=None):
-    """Return the artifact paths for a given workspace directory.
+LIBRARY_DIR = os.path.join(WORKSPACE_DIR, "library")
+os.makedirs(LIBRARY_DIR, exist_ok=True)
 
-    Passing an explicit directory lets callers (e.g. the Gradio frontend)
-    isolate each request in its own workspace instead of sharing the
-    module-level default, which prevents cross-user data leakage.
-    """
-    base = workspace_dir or WORKSPACE_DIR
-    os.makedirs(base, exist_ok=True)
+
+def get_lecture_paths(lecture_dir: str):
+    """Return paths for all artifacts inside a specific lecture's folder."""
+    os.makedirs(lecture_dir, exist_ok=True)
     return {
-        "workspace": base,
-        "transcript": os.path.join(base, "transcript.txt"),
-        "notes": os.path.join(base, "notes.md"),
-        "flashcards": os.path.join(base, "flashcards.md"),
-        "evaluation": os.path.join(base, "evaluation.json"),
-        "pdf": os.path.join(base, "notes.pdf"),
+        "workspace": lecture_dir,
+        "audio": os.path.join(lecture_dir, "audio.mp3"),
+        "transcript": os.path.join(lecture_dir, "transcript.txt"),
+        "notes": os.path.join(lecture_dir, "notes.md"),
+        "flashcards": os.path.join(lecture_dir, "flashcards.md"),
+        "evaluation": os.path.join(lecture_dir, "evaluation.json"),
+        "pdf": os.path.join(lecture_dir, "notes.pdf"),
+        "meta": os.path.join(lecture_dir, "meta.json"),
+        "lock": os.path.join(lecture_dir, ".lock"),
     }
-
-TRANSCRIPT_PATH = os.path.join(WORKSPACE_DIR, "transcript.txt")
-NOTES_PATH = os.path.join(WORKSPACE_DIR, "notes.md")
-FLASHCARDS_PATH = os.path.join(WORKSPACE_DIR, "flashcards.md")
-EVALUATION_PATH = os.path.join(WORKSPACE_DIR, "evaluation.json")
-PDF_PATH = os.path.join(WORKSPACE_DIR, "notes.pdf")
