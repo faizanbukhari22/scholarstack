@@ -7,8 +7,8 @@ from typing import Callable, Optional
 from google import genai
 from google.genai import types
 
-from src.config import get_workspace_paths
-from src.tools.media_fetcher import process_input_source
+from src.config import get_lecture_paths, get_env, LIBRARY_DIR
+from src.tools.media_fetcher import process_input_source, get_or_create_lecture_dir, write_meta_atomic
 from src.tools.transcriber import transcribe_audio_file
 from src.schema import LectureEvaluation
 
@@ -20,6 +20,48 @@ GEN_MODEL = os.getenv("EDUAGENT_GEN_MODEL", "gemini-2.5-flash")
 JUDGE_MODEL = os.getenv("EDUAGENT_JUDGE_MODEL", "gemini-2.5-flash")
 # Factual consistency score below which a revision pass is triggered.
 MIN_CONSISTENCY = float(os.getenv("EDUAGENT_MIN_CONSISTENCY", "0.85"))
+# A lock file older than this is considered abandoned (crashed run) and is
+# broken by the next request. Long lectures on CPU-basic hardware can
+# legitimately transcribe for a long time, so keep this generous.
+LOCK_STALE_SECONDS = float(os.getenv("EDUAGENT_LOCK_STALE_SECONDS", "7200"))
+
+
+def _acquire_lecture_lock(lock_path: str) -> bool:
+    """Atomically create the per-lecture lock file.
+
+    Returns True on success. If a lock already exists but is older than
+    LOCK_STALE_SECONDS, it is treated as abandoned, removed, and re-acquired.
+    O_CREAT | O_EXCL makes creation atomic, so two concurrent requests for the
+    same lecture cannot both win.
+    """
+    import time
+
+    for _ in range(2):
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w") as f:
+                f.write(str(os.getpid()))
+            return True
+        except FileExistsError:
+            try:
+                age = time.time() - os.path.getmtime(lock_path)
+            except OSError:
+                continue  # lock vanished between checks; retry acquisition
+            if age <= LOCK_STALE_SECONDS:
+                return False
+            print(f"[Orchestrator] Breaking stale lock ({int(age)}s old): {lock_path}")
+            try:
+                os.remove(lock_path)
+            except OSError:
+                pass
+    return False
+
+
+def _release_lecture_lock(lock_path: str) -> None:
+    try:
+        os.remove(lock_path)
+    except OSError:
+        pass
 
 
 async def generate_content_with_retry(
@@ -147,18 +189,119 @@ async def run_educational_pipeline(
     progress_callback: Optional[Callable[[float, str], None]] = None,
     api_key: Optional[str] = None,
     workspace_dir: Optional[str] = None,
+    force: bool = False,
+    force_all: bool = False,
 ) -> str:
     """Run the full ingestion -> transcription -> synthesis -> verification pipeline.
 
-    The verification pass is a real quality gate: if the audit detects
-    hallucinated claims or a factual consistency score below MIN_CONSISTENCY,
-    the audit findings are fed back to both synthesis agents for one revision
-    pass and the revised outputs are re-audited before delivery.
+    Supports lecture-specific directories, stage-level resuming, atomic writes,
+    and per-lecture locking so concurrent requests for the same lecture cannot
+    race inside one folder.
 
-    Returns the raw JSON text of the final structured LectureEvaluation report
-    so callers (e.g. the MCP server) can hand it back without re-reading disk.
+    Returns the raw JSON text of the final structured LectureEvaluation report.
     """
-    paths = get_workspace_paths(workspace_dir)
+    target_library_dir = os.path.join(workspace_dir, "library") if workspace_dir else LIBRARY_DIR
+    lecture_dir, meta = get_or_create_lecture_dir(input_source, target_library_dir)
+    paths = get_lecture_paths(lecture_dir)
+
+    # H1: Try to acquire the lock, with wait-and-retry for concurrent requests.
+    # Instead of crashing immediately, poll until the lock is free or the other
+    # run finishes (turning this into a cache hit).
+    max_lock_attempts = 60  # ~5 minutes of waiting (60 * 5s)
+    lock_acquired = False
+    for attempt in range(max_lock_attempts):
+        lock_acquired = _acquire_lecture_lock(paths["lock"])
+        if lock_acquired:
+            break
+        # While waiting, check if the other run finished (cache hit)
+        try:
+            with open(paths["meta"], "r", encoding="utf-8") as f:
+                fresh_meta = json.load(f)
+            if fresh_meta.get("status") == "complete" and not force and not force_all:
+                if (
+                    os.path.exists(paths["notes"])
+                    and os.path.exists(paths["flashcards"])
+                    and os.path.exists(paths["evaluation"])
+                ):
+                    if progress_callback:
+                        try:
+                            progress_callback(1.00, "Cache hit: Another run just finished this lecture.")
+                        except Exception:
+                            pass
+                    print(f"[Orchestrator] Cache hit (after wait) for lecture ID {fresh_meta['id']}.")
+                    with open(paths["evaluation"], "r", encoding="utf-8") as f:
+                        return f.read()
+        except Exception:
+            pass
+        if attempt == 0:
+            print(f"[Orchestrator] Lecture '{meta['id']}' is locked by another run. Waiting...")
+        await asyncio.sleep(5)
+
+    if not lock_acquired:
+        raise RuntimeError(
+            f"Lecture '{meta['id']}' has been locked for over 5 minutes. "
+            "The other run may be stuck. Try again later or use force_all=True."
+        )
+
+    try:
+        # H2: Cache-hit check is inside the lock so force_all cannot race
+        # with a concurrent read of the same artifacts.
+        # Re-read meta from disk: if we waited on the lock, another run may
+        # have completed this lecture after our initial (now stale) read.
+        try:
+            with open(paths["meta"], "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            pass  # keep the meta from get_or_create_lecture_dir
+
+        is_complete = meta.get("status") == "complete"
+        files_exist = (
+            os.path.exists(paths["notes"]) and
+            os.path.exists(paths["flashcards"]) and
+            os.path.exists(paths["evaluation"])
+        )
+
+        if is_complete and files_exist and not force and not force_all:
+            if progress_callback:
+                try:
+                    progress_callback(1.00, "Cache hit: Lecture study materials are already processed.")
+                except Exception as e:
+                    print(f"[Orchestrator] Warning: Progress callback error: {e}")
+            print(f"[Orchestrator] Cache hit for lecture ID {meta['id']}. Returning cached evaluation.")
+            with open(paths["evaluation"], "r", encoding="utf-8") as f:
+                return f.read()
+
+        return await _process_lecture(
+            input_source, lecture_dir, meta, paths,
+            progress_callback, api_key, force, force_all,
+        )
+    except Exception:
+        # M2: Mark the lecture as failed so the UI can distinguish crashed
+        # runs from in-progress ones.
+        try:
+            with open(paths["meta"], "r", encoding="utf-8") as f:
+                current_meta = json.load(f)
+            if current_meta.get("status") != "complete":
+                current_meta["status"] = "failed"
+                write_meta_atomic(paths["meta"], current_meta)
+        except Exception:
+            pass
+        raise
+    finally:
+        _release_lecture_lock(paths["lock"])
+
+
+async def _process_lecture(
+    input_source: str,
+    lecture_dir: str,
+    meta: dict,
+    paths: dict,
+    progress_callback: Optional[Callable[[float, str], None]],
+    api_key: Optional[str],
+    force: bool,
+    force_all: bool,
+) -> str:
+    """Run the pipeline stages. The caller holds the per-lecture lock."""
 
     def report_progress(fraction: float, description: str):
         if progress_callback:
@@ -169,23 +312,51 @@ async def run_educational_pipeline(
         else:
             print(f"[Pipeline Progress] {int(fraction * 100)}%: {description}")
 
+    # Handle force clearing
+    if force_all:
+        print(f"[Orchestrator] force_all requested. Clearing folder {lecture_dir}")
+        for key in ["audio", "transcript", "notes", "flashcards", "evaluation", "pdf"]:
+            p = paths[key]
+            if os.path.exists(p):
+                os.remove(p)
+        meta["status"] = "processing"
+        write_meta_atomic(paths["meta"], meta)
+    elif force:
+        print(f"[Orchestrator] force requested. Clearing study materials but keeping audio/transcript.")
+        for key in ["notes", "flashcards", "evaluation", "pdf"]:
+            p = paths[key]
+            if os.path.exists(p):
+                os.remove(p)
+        meta["status"] = "processing"
+        write_meta_atomic(paths["meta"], meta)
+
     report_progress(0.05, "Task initialized: Processing input source...")
 
     # 1. Fetch the media file locally or via remote download
-    report_progress(0.10, "Fetching audio stream (downloading or resolving cache)...")
-    audio_path = process_input_source(input_source, workspace_dir=paths["workspace"])
+    audio_path = paths["audio"]
+    if not os.path.exists(audio_path):
+        report_progress(0.10, "Fetching audio stream (downloading or resolving cache)...")
+        audio_path = process_input_source(input_source, lecture_dir=lecture_dir)
+    else:
+        print(f"[Orchestrator] Audio already exists at {audio_path}. Skipping fetch.")
 
     # 2. Local transcription using faster-whisper (Returns pre-formatted string payload)
-    report_progress(0.30, "Transcribing audio locally via Whisper...")
-    raw_transcript_text = transcribe_audio_file(audio_path)
+    transcript_path = paths["transcript"]
+    if not os.path.exists(transcript_path):
+        report_progress(0.30, "Transcribing audio locally via Whisper...")
+        raw_transcript_text = transcribe_audio_file(audio_path)
+        # Cache the raw transcript atomically
+        tmp_transcript_path = transcript_path + ".tmp"
+        with open(tmp_transcript_path, "w", encoding="utf-8") as f:
+            f.write(raw_transcript_text)
+        os.replace(tmp_transcript_path, transcript_path)
+    else:
+        print(f"[Orchestrator] Transcript already exists at {transcript_path}. Skipping transcription.")
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            raw_transcript_text = f.read()
 
-    # Cache the raw transcript to the workspace volume
-    with open(paths["transcript"], "w") as f:
-        f.write(raw_transcript_text)
-
-    # 3. Initialize the GenAI client. An explicitly passed key takes priority
-    # so shared frontends (e.g. the Gradio demo) never mutate os.environ.
-    target_key = api_key or os.getenv("GEMINI_API_KEY")
+    # 3. Initialize the GenAI client. An explicitly passed key takes priority.
+    target_key = api_key or get_env("GEMINI_API_KEY")
     if not target_key:
         raise ValueError(
             "Missing GEMINI_API_KEY. Set it in the environment or pass api_key."
@@ -203,7 +374,7 @@ async def run_educational_pipeline(
     report_progress(0.75, "Running factual audit and hallucination checks...")
     evaluation_text = await _run_verification(client, transcript_block, notes_text, flash_text)
 
-    # 6. Correction loop: if the audit flags issues, revise once and re-audit
+    # 6. Correction pass: if the audit flags issues, revise once and re-audit
     if _needs_revision(evaluation_text):
         report_progress(0.85, "Audit flagged issues -- running revision pass and re-audit...")
         print(f"[Quality Gate] Audit failed, revising outputs. Findings:\n{evaluation_text}")
@@ -213,13 +384,25 @@ async def run_educational_pipeline(
         notes_text, flash_text = notes_response.text, flash_response.text
         evaluation_text = await _run_verification(client, transcript_block, notes_text, flash_text)
 
-    # 7. Persist final artifacts
-    with open(paths["notes"], "w") as f:
+    # 7. Persist final artifacts atomically
+    tmp_notes = paths["notes"] + ".tmp"
+    tmp_flashcards = paths["flashcards"] + ".tmp"
+    tmp_evaluation = paths["evaluation"] + ".tmp"
+
+    with open(tmp_notes, "w", encoding="utf-8") as f:
         f.write(notes_text)
-    with open(paths["flashcards"], "w") as f:
+    with open(tmp_flashcards, "w", encoding="utf-8") as f:
         f.write(flash_text)
-    with open(paths["evaluation"], "w") as f:
+    with open(tmp_evaluation, "w", encoding="utf-8") as f:
         f.write(evaluation_text)
+
+    os.replace(tmp_notes, paths["notes"])
+    os.replace(tmp_flashcards, paths["flashcards"])
+    os.replace(tmp_evaluation, paths["evaluation"])
+
+    # 8. Update metadata status to complete atomically
+    meta["status"] = "complete"
+    write_meta_atomic(paths["meta"], meta)
 
     print(f"\n[Evaluation Report Results]:\n{evaluation_text}")
 
