@@ -33,7 +33,7 @@ The runtime is split into five isolated, deterministic layers:
 Accepts a YouTube URL or a local file path. For remote URLs, `yt-dlp` downloads and extracts the best available audio stream, post-processing it to a normalized 192kbps `.mp3` via FFmpeg. For local files, it resolves the path against the mounted workspace volume and passes it forward. No audio ever leaves the container boundary.
 
 ### Layer 2 - Acoustic Transcription (`src/tools/transcriber.py`)
-Initializes a `faster-whisper` model (base, int8 quantized, CPU) inside the container. The model produces timestamped text segments with start/end times for every dialogue block. The full transcript is cached to `workspace/transcript.txt` for reproducibility and debugging.
+Initializes a `faster-whisper` model (base, int8 quantized, CPU) inside the container. The model produces timestamped text segments with start/end times for every dialogue block. The full transcript is cached to the lecture's library folder for reproducibility and debugging.
 
 ### Layer 3 - Parallel Agent Orchestration (`src/main.py`)
 The core multi-agent loop. Two specialized Gemini agents are dispatched concurrently using `asyncio.gather` and `asyncio.to_thread`:
@@ -41,9 +41,9 @@ The core multi-agent loop. Two specialized Gemini agents are dispatched concurre
 - **Academic Synthesis Specialist**: Organizes the transcript into hierarchical Markdown study notes with a `# Summary` and `## Methodology` structure, suitable for revision.
 - **Educational Taxonomist**: Extracts critical terminology, formulas, and equations from the transcript into a Q&A table matrix compatible with Anki import.
 
-Both agents run against `gemini-2.5-flash` via the official `google-genai` SDK. Their outputs are written to `workspace/notes.md` and `workspace/flashcards.md`.
+Both agents run against `gemini-2.5-flash` via the official `google-genai` SDK. Their outputs are written to the lecture's library folder as `notes.md` and `flashcards.md`.
 
-### Layer 4 - Structured Verification with Correction Loop (`src/schema.py`)
+### Layer 4 - Structured Verification with Correction Pass (`src/schema.py`)
 After generation, a verification agent audits both outputs against the original transcript. It is forced to respond in structured JSON conforming to the `LectureEvaluation` Pydantic model, which captures:
 
 | Field | Type | Description |
@@ -55,7 +55,7 @@ After generation, a verification agent audits both outputs against the original 
 | `missing_critical_terms` | list[str] | Important concepts omitted from the outputs |
 | `key_concepts_covered` | list[str] | Important concepts successfully captured |
 
-The audit is a real quality gate, not a passive report: if `hallucination_detected` is true or `factual_consistency_score` falls below a configurable threshold (`EDUAGENT_MIN_CONSISTENCY`, default 0.85), the audit findings are fed back to both synthesis agents for a revision pass and the revised outputs are re-audited before delivery. The judge model is independently configurable via `EDUAGENT_JUDGE_MODEL` (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final result is printed to stdout and saved to `workspace/evaluation.json`.
+The audit is a real quality gate, not a passive report: if `hallucination_detected` is true or `factual_consistency_score` falls below a configurable threshold (`EDUAGENT_MIN_CONSISTENCY`, default 0.85), the audit findings are fed back to both synthesis agents for a revision pass and the revised outputs are re-audited before delivery. The judge model is independently configurable via `EDUAGENT_JUDGE_MODEL` (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final result is printed to stdout and saved to `evaluation.json` in the lecture's library folder.
 
 ### Layer 5 - MCP Server (`src/mcp_server.py`)
 The entire pipeline is also exposed as an MCP (Model Context Protocol) server named `eduagent_mcp`, so any MCP-compatible client (Claude Desktop, Claude Code, or another agent) can call EduAgent-OS as a tool rather than running it as a standalone script. See [MCP Server](#mcp-server) below.
@@ -68,10 +68,10 @@ The entire pipeline is also exposed as an MCP (Model Context Protocol) server na
 |---|---|
 | **Multi-Agent Architecture** | Two specialized sub-agents (Academic Synthesis Specialist and Educational Taxonomist) run in parallel via `asyncio.gather` with `asyncio.to_thread` |
 | **Structured Output Schema** | `LectureEvaluation` Pydantic model enforces typed JSON from Gemini via `response_schema` and `response_mime_type="application/json"` |
-| **Security Features** | API key injected at runtime via Docker Compose environment variables; `.env` and `workspace/` gitignored; remote ingestion restricted to a YouTube host whitelist (SSRF prevention); local file access sandboxed to the workspace directory; untrusted transcript content delimited against prompt injection; container runs as a non-root user; per-request workspaces isolate concurrent web demo users |
+| **Security Features** | API key injected at runtime via Docker Compose environment variables; `.env` and `workspace/` gitignored; remote ingestion restricted to a YouTube host whitelist (SSRF prevention); local file access sandboxed to the workspace directory; untrusted transcript content delimited against prompt injection; container runs as a non-root user; per-lecture library folders with file locking isolate concurrent pipeline runs |
 | **Deployability & CI** | Fully containerized via Docker + Docker Compose; GitHub Actions CI gate runs flake8 static analysis on every push to `main` |
 | **Tool Execution** | `yt-dlp` for media ingestion, `faster-whisper` for local ML transcription - both execute as tool calls inside the container boundary |
-| **MCP Server** | `src/mcp_server.py` exposes the full pipeline as MCP tools (`process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`) via the official Python MCP SDK (FastMCP), callable from Claude Desktop, Claude Code, or any MCP client |
+| **MCP Server** | `src/mcp_server.py` exposes the full pipeline as MCP tools (`process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`, `list_library`) via the official Python MCP SDK (FastMCP), callable from Claude Desktop, Claude Code, or any MCP client |
 | **Live Deployment** | `app.py` Gradio frontend runs as the Docker image's default entrypoint, deployable directly to Hugging Face Spaces for a public, interactive demo |
 
 ---
@@ -110,14 +110,20 @@ LECTURE_TARGET="https://www.youtube.com/watch?v=your_video_id" docker-compose up
 
 ### 3. View the outputs
 
-All output files are written to the `workspace/` folder on your host machine:
+Each lecture is stored in its own persistent folder under `workspace/library/`, named `{slugified-title}__{yt|local}_{ID}`. For example:
 
-| File | Description |
-|---|---|
-| `workspace/transcript.txt` | Timestamped transcript of the full lecture |
-| `workspace/notes.md` | Structured Markdown study notes |
-| `workspace/flashcards.md` | Anki-compatible Q&A flashcard table |
-| `workspace/evaluation.json` | Structured JSON hallucination audit report |
+```
+workspace/library/my-lecture-title__yt_X6eGCO5KOA/
+├── meta.json          # Lecture identity and processing status
+├── audio.mp3          # Downloaded/extracted audio stream
+├── transcript.txt     # Timestamped transcript of the full lecture
+├── notes.md           # Structured Markdown study notes
+├── flashcards.md      # Anki-compatible Q&A flashcard table
+├── evaluation.json    # Structured JSON hallucination audit report
+└── notes.pdf          # Optional PDF export (via export_pdf)
+```
+
+The folder suffix (e.g. `__yt_X6eGCO5KOA`) is the unique identity key. The human-readable prefix can be renamed freely without breaking lookups. Repeat runs for the same lecture hit the cache and return instantly; individual pipeline stages (download, transcription, synthesis) resume from the last completed step if a prior run was interrupted.
 
 ---
 
@@ -129,12 +135,15 @@ eduagent-os/
 ├── src/
 │   ├── main.py              # Orchestration loop and async agent dispatch
 │   ├── mcp_server.py        # FastMCP server exposing the pipeline as MCP tools
-│   ├── config.py            # Shared WORKSPACE_DIR resolution (container + local)
+│   ├── config.py            # Shared WORKSPACE_DIR and LIBRARY_DIR resolution
 │   ├── schema.py            # Pydantic LectureEvaluation structured output schema
 │   └── tools/
-│       ├── media_fetcher.py # URL/local file ingestion via yt-dlp (host whitelist + path sandbox)
+│       ├── media_fetcher.py # URL/local file ingestion, library folder management
 │       ├── transcriber.py   # Local ML transcription via faster-whisper
 │       └── pdf_generator.py # Markdown-to-PDF study guide compiler (fpdf2)
+├── workspace/               # Runtime data directory (gitignored)
+│   └── library/             # Persistent per-lecture storage folders
+│       └── {slug}__{id}/    # One folder per lecture (see "View the outputs")
 ├── sample_output/           # Sample pipeline outputs from a real run
 │   ├── transcript.txt
 │   ├── notes.md
@@ -142,7 +151,7 @@ eduagent-os/
 │   └── evaluation.json
 ├── .github/
 │   └── workflows/
-│       └── ci.yml           # GitHub Actions CI gate (flake8 static analysis)
+│       └── ci.yml           # GitHub Actions CI gate (flake8 + schema validation)
 ├── Dockerfile               # Container build spec (python:3.11-slim, ffmpeg, ARM64/AMD64)
 ├── docker-compose.yml       # Runtime orchestration with volume mount and env injection
 ├── requirements.txt         # Python dependencies
@@ -153,18 +162,19 @@ eduagent-os/
 
 ## MCP Server
 
-EduAgent-OS ships with an MCP (Model Context Protocol) server, `src/mcp_server.py`, built with the official Python MCP SDK (FastMCP). It exposes the pipeline as six callable tools instead of a single-shot script, so any MCP-compatible client can drive it directly.
+EduAgent-OS ships with an MCP (Model Context Protocol) server, `src/mcp_server.py`, built with the official Python MCP SDK (FastMCP). It exposes the pipeline as seven callable tools instead of a single-shot script, so any MCP-compatible client can drive it directly.
 
 ### Tools
 
 | Tool | Description |
 |---|---|
-| `process_lecture(input_source)` | Runs the full pipeline (ingest, transcribe, synthesize, verify) against a YouTube URL or local audio file. Returns the workspace paths and the parsed evaluation JSON. |
-| `get_notes()` | Returns the Markdown study notes from the most recent run. |
-| `get_flashcards()` | Returns the Anki-compatible flashcard table from the most recent run. |
-| `get_evaluation()` | Returns the structured `LectureEvaluation` JSON from the most recent run. |
-| `get_transcript()` | Returns the raw timestamped transcript from the most recent run. |
-| `export_pdf()` | Compiles the latest study notes into a print-ready PDF with headers and page numbers. |
+| `process_lecture(input_source, force?, force_all?)` | Runs the full pipeline (ingest, transcribe, synthesize, verify) against a YouTube URL or local audio file. Returns the library folder paths and the parsed evaluation JSON. Set `force=true` to regenerate study materials from a cached transcript without re-downloading or re-transcribing. Set `force_all=true` to wipe the lecture folder and re-run the entire pipeline from scratch. |
+| `get_notes(lecture_id?)` | Returns the Markdown study notes for a specific lecture ID (e.g. `yt_X6eGCO5KOA`) or the most recently completed lecture. |
+| `get_flashcards(lecture_id?)` | Returns the Anki-compatible flashcard table for a specific lecture or the latest run. |
+| `get_evaluation(lecture_id?)` | Returns the structured `LectureEvaluation` JSON for a specific lecture or the latest run. |
+| `get_transcript(lecture_id?)` | Returns the raw timestamped transcript for a specific lecture or the latest run. |
+| `export_pdf(lecture_id?)` | Compiles study notes into a print-ready PDF with headers and page numbers for a specific lecture or the latest run. |
+| `list_library()` | Returns a JSON list of all completed lectures in the library, sorted by creation date (newest first), including each lecture's ID, title, source URL, and folder name. |
 
 ### Local setup
 
@@ -246,7 +256,7 @@ Note: Hugging Face's persistent storage add-on has been discontinued, so `worksp
 
 Credentials are never stored in code or committed to version control. The `GEMINI_API_KEY` is passed into the container exclusively through Docker Compose's `environment` block, sourced from the local shell or a `.env` file that is explicitly excluded by `.gitignore`. The `workspace/` directory is also excluded to prevent accidental commits of transcribed audio content.
 
-Beyond credential handling, the ingestion surface is hardened for public deployment: remote URLs are validated against a YouTube host whitelist before any network call (preventing the demo from being used as an SSRF proxy), local file paths are resolved with `os.path.realpath` and rejected unless they live inside the workspace directory (preventing arbitrary container file reads), and URLs without an extractable video ID are rejected rather than falling back to a shared cache filename. Transcript content is wrapped in explicit delimiters and every prompt instructs the model to treat it as data, mitigating prompt injection from malicious lecture audio. The container drops root privileges via a dedicated `appuser`, and the Gradio frontend gives each request its own temporary workspace so concurrent users can never read or overwrite each other's artifacts.
+Beyond credential handling, the ingestion surface is hardened for public deployment: remote URLs are validated against a YouTube host whitelist before any network call (preventing the demo from being used as an SSRF proxy), local file paths are resolved with `os.path.realpath` and rejected unless they live inside the workspace directory (preventing arbitrary container file reads), and URLs without an extractable video ID are rejected rather than falling back to a shared cache filename. Transcript content is wrapped in explicit delimiters and every prompt instructs the model to treat it as data, mitigating prompt injection from malicious lecture audio. The container drops root privileges via a dedicated `appuser`, and each lecture is isolated in its own library folder with atomic file locking (`O_CREAT | O_EXCL`) so concurrent pipeline runs for the same lecture are serialized and can never corrupt each other's artifacts.
 
 ---
 
