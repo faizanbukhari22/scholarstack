@@ -25,12 +25,15 @@ EduAgent-OS is a containerized, production-grade multi-agent pipeline. A user pr
 3. Dispatches two specialized AI agents in parallel to synthesize study materials
 4. Runs a structured verification agent that scores the output for hallucinations and factual drift; if the audit flags ungrounded claims or low consistency, the findings are fed back to the synthesis agents for a revision pass and the revised outputs are re-audited before final delivery
 
-The result is four files written to the user's workspace folder:
+The result is a persistent folder-based library under the user's workspace folder (`workspace/library/{slugified-title}__{yt|local}_{ID}/`):
 
+- `meta.json` -- metadata and processing status
+- `audio.mp3` -- downloaded/extracted audio stream
 - `transcript.txt` -- full timestamped lecture transcript
 - `notes.md` -- hierarchical Markdown study notes
 - `flashcards.md` -- Anki-compatible Q&A flashcard table
 - `evaluation.json` -- structured hallucination audit report with consistency scores
+- `notes.pdf` -- optional print-ready PDF export
 
 The pipeline is fully containerized via Docker and Compose, runs on any machine with Docker installed, and requires only a Gemini API key.
 
@@ -52,11 +55,11 @@ The system is organized into five isolated, deterministic layers:
 
 ### Layer 1 -- Ingestion (media_fetcher.py)
 
-Accepts a YouTube URL or local file path. For URLs, yt-dlp downloads and post-processes the audio stream to a normalized 192kbps MP3 using FFmpeg. The fetcher checks for a cached MP3 by extracting the video ID from the URL before attempting any network call, so repeat runs skip the download entirely.
+Accepts a YouTube URL or local file path. For URLs, yt-dlp downloads and post-processes the audio stream to a normalized 192kbps MP3 using FFmpeg. The media fetcher organizes ingestion into the lecture library directory layout (`workspace/library/{slugified-title}__{yt|local}_{ID}/`), where `{ID}` is the YouTube video ID or a SHA-256 hash of the local file. It verifies identity using this unique suffix, so repeat runs instantly hit the cache.
 
 ### Layer 2 -- Local Acoustic Transcription (transcriber.py)
 
-Initializes a faster-whisper model (base, int8 quantized, CPU) from a path baked directly into the Docker image during build time. The model is pre-downloaded at `docker build` into `/app/models` and loaded at runtime from that path via the `WHISPER_MODEL_PATH` environment variable. No HuggingFace network calls occur at runtime. The model produces timestamped text segments cached to `workspace/transcript.txt`.
+Initializes a faster-whisper model (base, int8 quantized, CPU) from a path baked directly into the Docker image during build time. To optimize concurrent execution, the Whisper model is cached at the module level in memory, avoiding redundant 150MB disk-read cold starts on subsequent requests. The model produces timestamped text segments cached to the lecture's specific library folder.
 
 ### Layer 3 -- Parallel Agent Orchestration (main.py)
 
@@ -66,7 +69,7 @@ The core multi-agent loop. Two Gemini agents are dispatched concurrently using `
 
 **Educational Taxonomist** -- prompt-instructed to extract critical terminology, formulas, and equations into a Q&A table matrix compatible with Anki import.
 
-Both agents receive the same timestamped transcript and run simultaneously. Neither blocks the other. Their outputs are written to `workspace/notes.md` and `workspace/flashcards.md` once both complete.
+Both agents receive the same timestamped transcript and run simultaneously. Neither block the other. Their outputs are written to the lecture's specific library folder once both complete.
 
 ### Layer 4 -- Structured Verification with Correction Loop (schema.py)
 
@@ -82,11 +85,11 @@ class LectureEvaluation(BaseModel):
     key_concepts_covered: list[str]
 ```
 
-This is not optional post-processing -- it is a quality gate. If the audit reports hallucinated claims or a factual consistency score below a configurable threshold (default 0.85), the pipeline feeds the audit findings back to both synthesis agents for one revision pass and re-audits the revised outputs before delivery. The judge model is separately configurable (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final verification result is written to `workspace/evaluation.json` as a persistent audit artifact: a student can open this file and see exactly which claims were flagged as ungrounded and which transcript terms were omitted.
+This is not optional post-processing -- it is a quality gate. If the audit reports hallucinated claims or a factual consistency score below a configurable threshold (default 0.85), the pipeline feeds the audit findings back to both synthesis agents for one revision pass and re-audits the revised outputs before delivery. The judge model is separately configurable (e.g. `gemini-2.5-pro`) to reduce self-grading bias. The final verification result is written to `evaluation.json` in the lecture's folder as a persistent audit artifact: a student can open this file and see exactly which claims were flagged as ungrounded and which transcript terms were omitted.
 
 ### Layer 5 -- MCP Server (mcp_server.py)
 
-The entire pipeline is also exposed as an MCP (Model Context Protocol) server, so any MCP-compatible client can drive EduAgent-OS as a composable tool rather than a standalone script (see Key Concepts below).
+The entire pipeline is also exposed as an MCP (Model Context Protocol) server, so any MCP-compatible client can drive EduAgent-OS as a composable tool. It exposes seven tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`, and `list_library` (which returns a JSON list of all completed lectures).
 
 ---
 
@@ -94,9 +97,9 @@ The entire pipeline is also exposed as an MCP (Model Context Protocol) server, s
 
 **Multi-Agent System:** Two specialized sub-agents (Academic Synthesis Specialist and Educational Taxonomist) run in parallel via `asyncio.gather` with `asyncio.to_thread`, followed by a third independent verification agent whose audit can trigger a revision pass -- a closed agentic loop, not a linear script. Each agent has a distinct role, distinct instruction set, and distinct output artifact.
 
-**MCP Server:** The full pipeline is also exposed as an MCP (Model Context Protocol) server (`src/mcp_server.py`, built with the official Python MCP SDK / FastMCP) with six tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, and `export_pdf`. Claude Desktop, Claude Code, or any MCP-compatible client can drive EduAgent-OS as a composable tool rather than a standalone script.
+**MCP Server:** The full pipeline is also exposed as an MCP (Model Context Protocol) server (`src/mcp_server.py`, built with the official Python MCP SDK / FastMCP) with seven tools: `process_lecture`, `get_notes`, `get_flashcards`, `get_evaluation`, `get_transcript`, `export_pdf`, and `list_library`. Claude Desktop, Claude Code, or any MCP-compatible client can drive EduAgent-OS as a composable tool.
 
-**Security Features:** The Gemini API key is never stored in code or committed to version control. It is passed into the container exclusively through Docker Compose's `environment` block, sourced from a local `.env` file that is explicitly excluded by `.gitignore`. Audio data never leaves the container boundary -- all transcription is performed locally by faster-whisper. The workspace directory containing user data is also gitignored. The ingestion surface is hardened for public deployment: remote URLs are validated against a YouTube host whitelist before any network call (SSRF prevention), local file paths are sandboxed to the workspace directory (no arbitrary container file reads), transcript content is delimited and marked as untrusted data in every prompt (prompt-injection mitigation), the container runs as a non-root user, and the web demo isolates each request in its own temporary workspace so concurrent users can never see each other's data.
+**Security Features:** The Gemini API key is never stored in code or committed to version control. A dedicated environment store in `src/config.py` loads keys from `.env` without polluting `os.environ` (preventing subprocesses like ffmpeg or yt-dlp from leaking keys in crash logs). Audio data never leaves the container boundary -- all transcription is performed locally. The ingestion surface is hardened for public deployment: remote URLs are validated against a YouTube host whitelist (SSRF prevention), local file paths are sandboxed to the workspace directory (no arbitrary container file reads), transcript content is wrapped in explicit delimiters (prompt-injection mitigation), and each lecture is isolated in its own library folder with atomic file locking (`O_CREAT | O_EXCL`) so concurrent runs for the same lecture are serialized and can never corrupt each other's artifacts.
 
 **Deployability:** The project is fully containerized via Docker and Docker Compose. A `python:3.11-slim` base image with explicit platform handling ensures reproducibility across ARM64 and AMD64 architectures. A GitHub Actions CI pipeline (`ci.yml`) runs flake8 static analysis on every push to `main`, with a hard-fail pass for syntax errors and undefined names.
 
@@ -104,9 +107,11 @@ The entire pipeline is also exposed as an MCP (Model Context Protocol) server, s
 
 ## Technical Implementation Highlights
 
-**Model baking for zero-latency cold starts.** The faster-whisper base model is pre-downloaded into the image layer at build time using `download_root='/app/models'`. At runtime, the container loads model weights from disk in under a second with no network activity. This reduced cold-start time from 3-8 minutes to under 30 seconds on repeat runs.
+**Model baking and memory caching.** The faster-whisper base model is pre-downloaded into the image layer at build time. To optimize concurrent execution, the Whisper model is cached at the module level in memory, avoiding redundant 150MB disk-read cold starts on subsequent requests.
 
-**Download caching for repeat runs.** The media fetcher extracts the YouTube video ID from the URL using regex and checks whether `{video_id}.mp3` already exists in the workspace before invoking yt-dlp. Cache hits are logged and the download is skipped entirely.
+**Persistent library caching.** The media fetcher organizes ingestion into the lecture library directory layout (`workspace/library/{slugified-title}__{yt|local}_{ID}/`), where `{ID}` is the YouTube video ID or a SHA-256 hash of the local file. Suffix-based identity check handles cache hits instantly, and individual stages (download, transcription, synthesis) resume from the last completed file if an earlier run was interrupted.
+
+**Atomic file locking.** Per-lecture folders utilize atomic file locking (`O_CREAT | O_EXCL`) so concurrent pipeline executions for the same lecture are serialized, preventing write collisions and race conditions.
 
 **Typed output enforcement.** Rather than parsing free-text model responses, the verification layer uses `response_schema=LectureEvaluation` to force Gemini to emit structured JSON that Pydantic validates at the schema level. This makes the audit result machine-readable and eliminates parsing fragility.
 
@@ -119,7 +124,7 @@ The entire pipeline is also exposed as an MCP (Model Context Protocol) server, s
 Running `docker-compose up --build` on the Kaggle capstone overview lecture produced the following:
 
 ```
-[Fetcher] Cache hit -- skipping download: X6eGCO_5KOA.mp3
+[Fetcher] Audio cache hit: workspace/library/google-ai-agents-intensive-capstone-overview__yt_X6eGCO_5KOA/audio.mp3
 [Transcriber] Attempting to load Whisper model (base) from baked cache: /app/models...
 [Pipeline Progress] 55%: Generating structured study notes and flashcards in parallel...
 [Pipeline Progress] 75%: Running factual audit and hallucination checks...
