@@ -17,18 +17,17 @@ is called. See README.md for Claude Desktop / Claude Code configuration.
 
 import json
 import os
+import glob
 
 from pydantic import BaseModel, ConfigDict, Field
 from mcp.server.fastmcp import FastMCP
 
 from src.config import (
-    WORKSPACE_DIR,
-    NOTES_PATH,
-    FLASHCARDS_PATH,
-    EVALUATION_PATH,
-    TRANSCRIPT_PATH,
-    PDF_PATH,
+    LIBRARY_DIR,
+    get_env,
+    get_lecture_paths,
 )
+from src.tools.media_fetcher import get_or_create_lecture_dir
 from src.main import run_educational_pipeline
 from src.tools.pdf_generator import compile_markdown_to_pdf
 
@@ -50,6 +49,51 @@ class ProcessLectureInput(BaseModel):
         min_length=1,
         max_length=2048,
     )
+    force: bool = Field(
+        False,
+        description="Force regeneration of study materials (notes, flashcards, evaluation) from cached transcript without re-downloading or re-transcribing."
+    )
+    force_all: bool = Field(
+        False,
+        description="Wipe existing cache completely and force a full pipeline re-run (redownload, retranscribe, regenerate)."
+    )
+
+
+def resolve_lecture_paths_for_mcp(lecture_id: str = None) -> dict:
+    """Resolves paths for a specified lecture_id or the most recently modified complete lecture."""
+    if lecture_id:
+        # Check folders ending in __lecture_id
+        search_pattern = os.path.join(LIBRARY_DIR, f"*__{lecture_id}")
+        matches = glob.glob(search_pattern)
+        if not matches:
+            # Check exact folder name match
+            exact_path = os.path.join(LIBRARY_DIR, lecture_id)
+            if os.path.isdir(exact_path):
+                matches = [exact_path]
+        if not matches:
+            raise FileNotFoundError(f"Lecture with ID/folder '{lecture_id}' not found in library.")
+        return get_lecture_paths(matches[0])
+
+    # Fallback to the latest completed run
+    folders = glob.glob(os.path.join(LIBRARY_DIR, "*__*"))
+    completed_folders = []
+    for folder in folders:
+        meta_path = os.path.join(folder, "meta.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                if meta.get("status") == "complete":
+                    mtime = os.path.getmtime(meta_path)
+                    completed_folders.append((mtime, folder))
+            except Exception:
+                pass
+    if not completed_folders:
+        raise FileNotFoundError("No completed lectures found in library. Call 'process_lecture' first.")
+
+    # Sort by mtime descending (newest first)
+    completed_folders.sort(key=lambda x: x[0], reverse=True)
+    return get_lecture_paths(completed_folders[0][1])
 
 
 def _read_file(path: str, label: str) -> str:
@@ -59,20 +103,28 @@ def _read_file(path: str, label: str) -> str:
             f"{label} not found at '{path}'. Call 'process_lecture' first to "
             "generate it, then retry this tool."
         )
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 
 def _handle_error(e: Exception) -> str:
-    """Consistent error formatting across all tools."""
+    """Consistent error formatting across all tools, with API key redaction."""
+    msg = str(e)
+    # Redact API key fragments from error messages
+    api_key = get_env("GEMINI_API_KEY")
+    if api_key and api_key in msg:
+        msg = msg.replace(api_key, "[REDACTED]")
+    if api_key and len(api_key) > 8:
+        msg = msg.replace(api_key[:8], "[REDACTED]")
+
     if isinstance(e, FileNotFoundError):
-        return f"Error: {e}"
-    if "GEMINI_API_KEY" in str(e) or isinstance(e, PermissionError):
+        return f"Error: {msg}"
+    if "GEMINI_API_KEY" in msg or isinstance(e, PermissionError):
         return (
             "Error: Missing or invalid GEMINI_API_KEY. Set it in the environment "
             "(or .env file) before calling process_lecture."
         )
-    return f"Error: {type(e).__name__}: {e}"
+    return f"Error: {type(e).__name__}: {msg}"
 
 
 @mcp.tool(
@@ -88,69 +140,39 @@ def _handle_error(e: Exception) -> str:
 async def process_lecture(params: ProcessLectureInput) -> str:
     """Run the full EduAgent-OS pipeline against a YouTube lecture or audio file.
 
-    This tool ingests the source (downloading and extracting audio via yt-dlp
-    for YouTube URLs, or reading directly for local files), transcribes it
-    locally with faster-whisper, dispatches two parallel Gemini agents (an
-    Academic Synthesis Specialist producing hierarchical Markdown study notes,
-    and an Educational Taxonomist producing an Anki-compatible Q&A flashcard
-    table), and finally runs a structured verification pass that audits both
-    outputs against the transcript for factual consistency and hallucination
-    risk. All artifacts are written to the shared workspace directory and the
-    evaluation is also returned inline in this response.
-
-    This is the expensive, long-running tool in this server (transcription and
-    three sequential/parallel LLM calls) - prefer get_notes / get_flashcards /
-    get_evaluation / get_transcript for re-reading results from a prior run.
+    This tool ingests the source, transcribes it locally, dispatches Gemini agents
+    to generate study notes and flashcards, and performs a hallucination verification check.
+    All outputs are saved in the persistent lecture-specific directory under the library folder.
 
     Args:
         params (ProcessLectureInput): Validated input containing:
             - input_source (str): YouTube URL or local audio file path to process
-
-    Returns:
-        str: JSON-formatted string with the schema:
-        {
-            "status": "success",
-            "workspace_dir": str,      # absolute path artifacts were written to
-            "notes_path": str,
-            "flashcards_path": str,
-            "evaluation_path": str,
-            "evaluation": {
-                "factual_consistency_score": float,   # 0.0-1.0
-                "summary_quality_score": float,       # 0.0-1.0
-                "hallucination_detected": bool,
-                "hallucinated_claims": [str, ...],    # ungrounded claims found
-                "missing_critical_terms": [str, ...],
-                "key_concepts_covered": [str, ...]
-            }
-        }
-
-        On failure: "Error: <message>" describing what went wrong (e.g. missing
-        GEMINI_API_KEY, unreachable URL, or an unresolvable local file path).
-
-    Examples:
-        - Use when: "Turn this lecture into study notes: https://youtube.com/watch?v=..."
-        - Use when: "Process the audio file at /app/workspace/lecture.mp3"
-        - Don't use when: You already ran this and just want the notes or
-          flashcards back (use get_notes / get_flashcards instead - they are
-          near-instant disk reads instead of a full pipeline run)
+            - force (bool): Regenerate Gemini study materials only
+            - force_all (bool): Retranscribe and redownload everything
     """
     try:
-        await run_educational_pipeline(params.input_source)
+        await run_educational_pipeline(
+            params.input_source,
+            force=params.force,
+            force_all=params.force_all
+        )
     except Exception as e:
         return _handle_error(e)
 
     try:
-        evaluation_raw = _read_file(EVALUATION_PATH, "Evaluation report")
+        lecture_dir, _ = get_or_create_lecture_dir(params.input_source, LIBRARY_DIR)
+        paths = get_lecture_paths(lecture_dir)
+        evaluation_raw = _read_file(paths["evaluation"], "Evaluation report")
         evaluation_parsed = json.loads(evaluation_raw)
     except Exception as e:
         return _handle_error(e)
 
     response = {
         "status": "success",
-        "workspace_dir": WORKSPACE_DIR,
-        "notes_path": NOTES_PATH,
-        "flashcards_path": FLASHCARDS_PATH,
-        "evaluation_path": EVALUATION_PATH,
+        "workspace_dir": paths["workspace"],
+        "notes_path": paths["notes"],
+        "flashcards_path": paths["flashcards"],
+        "evaluation_path": paths["evaluation"],
         "evaluation": evaluation_parsed,
     }
     return json.dumps(response, indent=2)
@@ -166,19 +188,16 @@ async def process_lecture(params: ProcessLectureInput) -> str:
         "openWorldHint": False,
     },
 )
-async def get_notes() -> str:
-    """Retrieve the Markdown study notes generated by the most recent run.
+async def get_notes(lecture_id: str = None) -> str:
+    """Retrieve the Markdown study notes generated for a specific lecture ID or the latest run.
 
-    Reads 'notes.md' from the workspace directory. This does not trigger any
-    processing - call 'process_lecture' first if no run has completed yet.
-
-    Returns:
-        str: The full Markdown contents of the generated study notes
-        (structured with '# Summary' and '## Methodology' style headers), or
-        "Error: <message>" if no notes file exists yet.
+    Args:
+        lecture_id (str, optional): The YouTube video ID or local content hash to retrieve notes for.
+                                    If not specified, returns the most recently completed lecture.
     """
     try:
-        return _read_file(NOTES_PATH, "Study notes")
+        paths = resolve_lecture_paths_for_mcp(lecture_id)
+        return _read_file(paths["notes"], "Study notes")
     except Exception as e:
         return _handle_error(e)
 
@@ -193,18 +212,16 @@ async def get_notes() -> str:
         "openWorldHint": False,
     },
 )
-async def get_flashcards() -> str:
-    """Retrieve the Anki-compatible Q&A flashcard table from the most recent run.
+async def get_flashcards(lecture_id: str = None) -> str:
+    """Retrieve the Anki-compatible Q&A flashcard table for a specific lecture ID or the latest run.
 
-    Reads 'flashcards.md' from the workspace directory. This does not trigger
-    any processing - call 'process_lecture' first if no run has completed yet.
-
-    Returns:
-        str: The full Markdown Q&A table of flashcards, or "Error: <message>"
-        if no flashcards file exists yet.
+    Args:
+        lecture_id (str, optional): The YouTube video ID or local content hash.
+                                    If not specified, returns the most recently completed lecture.
     """
     try:
-        return _read_file(FLASHCARDS_PATH, "Flashcards")
+        paths = resolve_lecture_paths_for_mcp(lecture_id)
+        return _read_file(paths["flashcards"], "Flashcards")
     except Exception as e:
         return _handle_error(e)
 
@@ -219,27 +236,16 @@ async def get_flashcards() -> str:
         "openWorldHint": False,
     },
 )
-async def get_evaluation() -> str:
-    """Retrieve the structured quality/hallucination audit from the most recent run.
+async def get_evaluation(lecture_id: str = None) -> str:
+    """Retrieve the structured quality/hallucination audit for a specific lecture ID or the latest run.
 
-    Reads 'evaluation.json' from the workspace directory and returns it parsed
-    and re-serialized. This does not trigger any processing - call
-    'process_lecture' first if no run has completed yet.
-
-    Returns:
-        str: JSON-formatted string matching the LectureEvaluation schema:
-        {
-            "factual_consistency_score": float,   # 0.0-1.0
-            "summary_quality_score": float,       # 0.0-1.0
-            "hallucination_detected": bool,
-            "hallucinated_claims": [str, ...],    # ungrounded claims found
-            "missing_critical_terms": [str, ...],
-            "key_concepts_covered": [str, ...]
-        }
-        Or "Error: <message>" if no evaluation file exists yet.
+    Args:
+        lecture_id (str, optional): The YouTube video ID or local content hash.
+                                    If not specified, returns the most recently completed lecture.
     """
     try:
-        raw = _read_file(EVALUATION_PATH, "Evaluation report")
+        paths = resolve_lecture_paths_for_mcp(lecture_id)
+        raw = _read_file(paths["evaluation"], "Evaluation report")
     except Exception as e:
         return _handle_error(e)
     try:
@@ -258,20 +264,16 @@ async def get_evaluation() -> str:
         "openWorldHint": False,
     },
 )
-async def get_transcript() -> str:
-    """Retrieve the raw timestamped transcript from the most recent pipeline run.
+async def get_transcript(lecture_id: str = None) -> str:
+    """Retrieve the raw timestamped transcript for a specific lecture ID or the latest run.
 
-    Reads 'transcript.txt' from the workspace directory. Useful for spot-checking
-    the evaluation report's claims (e.g. missing_critical_terms) against the
-    original source material without re-running transcription.
-
-    Returns:
-        str: The full timestamped transcript text (one "[start s - end s] text"
-        line per dialogue segment), or "Error: <message>" if no transcript file
-        exists yet.
+    Args:
+        lecture_id (str, optional): The YouTube video ID or local content hash.
+                                    If not specified, returns the most recently completed lecture.
     """
     try:
-        return _read_file(TRANSCRIPT_PATH, "Transcript")
+        paths = resolve_lecture_paths_for_mcp(lecture_id)
+        return _read_file(paths["transcript"], "Transcript")
     except Exception as e:
         return _handle_error(e)
 
@@ -286,34 +288,68 @@ async def get_transcript() -> str:
         "openWorldHint": False,
     },
 )
-async def export_pdf() -> str:
-    """Compile the latest generated Markdown study notes into a print-ready PDF document.
+async def export_pdf(lecture_id: str = None) -> str:
+    """Compile Markdown study notes into a print-ready PDF document for a specific lecture or the latest run.
 
-    Reads 'notes.md' from the workspace directory and saves it as 'notes.pdf'
-    with running headers and page numbers. This does not trigger a full lecture run - 
-    call 'process_lecture' first to generate the notes.
-
-    Returns:
-        str: A JSON-formatted string containing the success status and the absolute
-        path to the generated PDF document, or "Error: <message>" if it fails.
+    Args:
+        lecture_id (str, optional): The YouTube video ID or local content hash.
+                                    If not specified, targets the most recently completed lecture.
     """
     try:
-        # Check if notes.md exists first
-        if not os.path.exists(NOTES_PATH):
-            raise FileNotFoundError(
-                "Study notes file (notes.md) not found. "
-                "Call 'process_lecture' first to generate notes before exporting to PDF."
-            )
+        paths = resolve_lecture_paths_for_mcp(lecture_id)
+        if not os.path.exists(paths["notes"]):
+            raise FileNotFoundError("Study notes file (notes.md) not found.")
         
-        # Compile Markdown to PDF
-        compile_markdown_to_pdf(NOTES_PATH, PDF_PATH)
+        compile_markdown_to_pdf(paths["notes"], paths["pdf"])
         
         response = {
             "status": "success",
-            "pdf_path": PDF_PATH,
-            "message": f"Successfully compiled study guide PDF at: {PDF_PATH}"
+            "pdf_path": paths["pdf"],
+            "message": f"Successfully compiled study guide PDF at: {paths['pdf']}"
         }
         return json.dumps(response, indent=2)
+    except Exception as e:
+        return _handle_error(e)
+
+
+@mcp.tool(
+    name="list_library",
+    annotations={
+        "title": "List Processed Lecture Library",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def list_library() -> str:
+    """List all processed lectures currently stored in the automated library.
+
+    Returns:
+        str: JSON-formatted list of completed lectures in the library, sorted by creation date descending.
+    """
+    try:
+        folders = glob.glob(os.path.join(LIBRARY_DIR, "*__*"))
+        library_items = []
+        for folder in folders:
+            meta_path = os.path.join(folder, "meta.json")
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    if meta.get("status") == "complete":
+                        library_items.append({
+                            "id": meta.get("id"),
+                            "title": meta.get("title"),
+                            "source": meta.get("source"),
+                            "created_at": meta.get("created_at"),
+                            "folder_name": os.path.basename(folder)
+                        })
+                except Exception:
+                    pass
+        # Sort by created_at descending (newest first)
+        library_items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return json.dumps(library_items, indent=2)
     except Exception as e:
         return _handle_error(e)
 
