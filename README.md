@@ -6,7 +6,7 @@ colorTo: blue
 sdk: docker
 app_port: 7860
 suggested_hardware: cpu-basic
-short_description: Turn any YouTube lecture into study notes, flashcards, and a hallucination audit
+short_description: Turn YouTube lectures into study notes and flashcards
 ---
 
 # ScholarStack
